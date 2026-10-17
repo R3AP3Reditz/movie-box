@@ -522,12 +522,12 @@ class MovieBoxProvider:
         if title.kind in ("series", "short_series") and (season < 1 or episode < 1):
             raise ProviderError("Series playback requires season and episode", 422)
         title_page = f"{BASE_URL}/movies/{detail_path}"
-        data = self._data("/subject/play", params={"subjectId": title.id, "se": season, "ep": episode, "detailPath": detail_path, "streamSignType": 1, "supportCodecs[h264]": 1}, referer=title_page)
+        try:
+            data = self._data("/subject/play", params={"subjectId": title.id, "se": season, "ep": episode, "detailPath": detail_path, "streamSignType": 1, "supportCodecs[h264]": 1}, referer=title_page)
+        except ProviderError:
+            data = {}
         if not self._has_streams(data) and str(title.id).isdigit() and self._mobile_enabled():
-            try:
-                data = self._mobile_json("GET", f"/wefeed-mobile-bff/subject-api/play-info?subjectId={title.id}&se={season}&ep={episode}")
-            except ProviderError:
-                pass
+            data = self._mobile_json("GET", f"/wefeed-mobile-bff/subject-api/play-info?subjectId={title.id}&se={season}&ep={episode}")
         streams = []
         for value in (data.get("streams") or []) + (data.get("dash") or []) + (data.get("hls") or []):
             url = value.get("url")
