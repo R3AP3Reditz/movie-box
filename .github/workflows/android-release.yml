@@ -133,7 +133,7 @@ jobs:
           channel: stable
           cache: true
       - name: Linux libraries
-        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-14-dev rpm
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-14-dev libmpv-dev rpm
       - name: Build and package
         working-directory: movie_box_app
         run: |
