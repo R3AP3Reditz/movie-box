@@ -8,11 +8,11 @@ from scraper.app import app, provider
 from scraper.models import Title
 from scraper.provider import MovieBoxProvider, ProviderError, _search_key, _search_rank
 
-def test_search_rank_puts_the_playable_series_ahead_of_the_same_named_movie():
+def test_search_rank_puts_the_official_series_ahead_of_the_same_named_stub():
     wanted = _search_key("Mr. Robot")
-    series = Title(id="1", detail_path="1", kind="series", title="Mr. Robot", has_resource=True)
-    stub = Title(id="2", detail_path="2", kind="movie", title="Mr. Robot", has_resource=False)
-    assert _search_rank(series, wanted) < _search_rank(stub, wanted)
+    official = Title(id="5136945138450711584", detail_path="mr-robot-6pNxPRjgt76", kind="series", title="Mr. Robot S1-S4", has_resource=True)
+    stub = Title(id="4710892163557640360", detail_path="4710892163557640360", kind="movie", title="Mr. Robot", has_resource=False)
+    assert _search_rank(official, wanted) < _search_rank(stub, wanted)
 
 
 SUBJECT = {

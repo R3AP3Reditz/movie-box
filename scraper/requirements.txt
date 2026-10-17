@@ -1,4 +1,5 @@
 fastapi==0.115.12
+curl_cffi==0.14.0
 httpx==0.28.1
 pydantic==2.11.3
 uvicorn==0.34.2

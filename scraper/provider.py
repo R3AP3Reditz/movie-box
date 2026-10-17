@@ -33,22 +33,12 @@ def _search_key(value: str) -> str:
 
 
 def _search_rank(title: Title, wanted: str) -> tuple:
-    # An empty movie named "Mr. Robot" shares the query with the series. The
-    # series that can actually play has to sort ahead of that stub.
+    # The official site result uses a slug such as mr-robot-6pNxPRjgt76. A
+    # same-named catalog stub uses a numeric id and must not sort ahead of it.
     key = _search_key(title.title)
-    exact = key == wanted
-    prefix = key.startswith(wanted)
-    series = title.kind == "series"
-    group = 4
-    if exact and series:
-        group = 0
-    elif prefix and series:
-        group = 1
-    elif exact:
-        group = 2
-    elif prefix:
-        group = 3
-    return (group, 0 if title.has_resource else 1)
+    matches = key == wanted or key.startswith(wanted)
+    website = "-" in title.detail_path
+    return (0 if matches and website else 1 if matches else 2, 0 if title.kind == "series" else 1, 0 if title.has_resource else 1)
 
 
 def _kind(value: int | None) -> str:
@@ -146,7 +136,7 @@ class MovieBoxProvider:
         self._guest_token_value: str | None = None
         self._mobile_token_value: str | None = None
         self._mobile_device = secrets.token_hex(16)
-        self.headers = {"Referer": f"{BASE_URL}/", "User-Agent": "Mozilla/5.0", "X-Request-Lang": "en"}
+        self.headers = {"Referer": f"{BASE_URL}/", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", "Accept-Language": "en-US,en;q=0.9", "X-Request-Lang": "en"}
 
     def _mobile_enabled(self) -> bool:
         return type(getattr(self.client, "_transport", None)).__name__ != "MockTransport"
@@ -378,10 +368,23 @@ class MovieBoxProvider:
                     self.client.cookies.clear()
         raise ProviderError("Search unavailable")
 
+    def _official_search_html(self, keyword: str) -> str:
+        # Same page as https://themoviebox.xyz/newWeb/searchResult. A plain HTTP
+        # client from a hosting address gets a different page, so match Chrome.
+        if self._mobile_enabled():
+            try:
+                from curl_cffi import requests as browser
+                response = browser.get(f"{BASE_URL}/newWeb/searchResult", params={"keyword": keyword}, headers={"Referer": f"{BASE_URL}/", "Accept-Language": "en-US,en;q=0.9"}, impersonate="chrome131", timeout=20)
+                if response.status_code == 200 and "__NUXT_DATA__" in response.text:
+                    return response.text
+            except Exception:
+                pass
+        response = self._request("GET", "/newWeb/searchResult", params={"keyword": keyword})
+        return response.text
+
     def _rendered_items(self, keyword: str) -> list[dict]:
         try:
-            response = self._request("GET", "/newWeb/searchResult", params={"keyword": keyword})
-            lists = _nuxt_result_lists(response.text)
+            lists = _nuxt_result_lists(self._official_search_html(keyword))
         except ProviderError:
             return []
         items = []
