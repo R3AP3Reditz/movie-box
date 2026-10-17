@@ -97,7 +97,7 @@ def test_search_uses_suggestion_spelling_for_the_website_page():
 
     service = MovieBoxProvider(httpx.Client(base_url="https://themoviebox.xyz", transport=httpx.MockTransport(handler)))
     assert service.search("mr robot").items[0].title == "Example Movie"
-    assert seen == ["mr robot series"]
+    assert seen == ["mr robot series", "Mr. Robot"]
 
 
 def test_search_page_includes_series_missing_from_json_search():
@@ -119,6 +119,42 @@ def test_search_page_includes_series_missing_from_json_search():
     result = service.search("Mr. Robot")
     assert [item.title for item in result.items] == ["Mr. Robot S1-S4", "Example Movie"]
     assert result.has_more and result.next_page == 2
+
+
+def test_search_reads_a_later_result_list_when_the_first_omits_the_series():
+    rendered = [
+        None,
+        {"items": 2},
+        [3],
+        {"subjectId": 4, "subjectType": 5, "title": 6, "detailPath": 7},
+        "111",
+        2,
+        "The Mentalist S1-S7",
+        "the-mentalist",
+        {"pager": 9, "items": 10},
+        {"hasMore": False},
+        [11],
+        {"subjectId": 12, "subjectType": 13, "title": 14, "detailPath": 15},
+        "456",
+        2,
+        "Mr. Robot S1-S4",
+        "mr-robot-abc",
+    ]
+    html = f'<script id="__NUXT_DATA__">{json.dumps(rendered)}</script>'
+
+    def handler(request):
+        if request.url.path.endswith("/subject/search-suggest"):
+            return httpx.Response(200, json={"code": 0, "data": {"items": []}})
+        if request.url.path == "/newWeb/searchResult":
+            return httpx.Response(200, text=html)
+        if request.url.path.endswith("/subject/trending"):
+            return httpx.Response(200, headers={"x-user": json.dumps({"token": "guest-token"})}, json={"code": 0, "data": {}})
+        if request.url.path.endswith("/subject/search"):
+            return httpx.Response(200, json={"code": 0, "data": {"items": [], "pager": {"hasMore": False}}})
+        raise AssertionError(request.url)
+
+    service = MovieBoxProvider(httpx.Client(base_url="https://themoviebox.xyz", transport=httpx.MockTransport(handler)))
+    assert [item.title for item in service.search("Mr. Robot").items] == ["Mr. Robot S1-S4", "The Mentalist S1-S7"]
 
 
 def test_detail_probes_seasons_when_provider_has_no_detail():

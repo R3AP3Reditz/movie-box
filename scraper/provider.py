@@ -85,18 +85,26 @@ def _resolve(values: list, index: int, depth: int = 0):
     return value
 
 
-def _nuxt_search(html: str) -> tuple[list[dict], dict]:
+def _nuxt_result_lists(html: str) -> list[tuple[list[dict], dict]]:
     values = _nuxt_values(html)
+    found = []
     for value in values:
-        if isinstance(value, dict) and "items" in value and "pager" in value:
-            items = _resolve(values, value["items"])
-            pager = _resolve(values, value["pager"])
-            pager = pager if isinstance(pager, dict) else {}
-            if items and isinstance(items[0], dict) and "subjectId" in items[0]:
-                return items, pager
-            if items == []:
-                return [], pager
-    raise ProviderError("Search result format changed")
+        if not isinstance(value, dict) or "items" not in value:
+            continue
+        items = _resolve(values, value["items"])
+        pager = _resolve(values, value["pager"]) if "pager" in value else {}
+        pager = pager if isinstance(pager, dict) else {}
+        if items and isinstance(items[0], dict) and "subjectId" in items[0]:
+            found.append((items, pager))
+        elif items == [] and "pager" in value:
+            found.append(([], pager))
+    if not found:
+        raise ProviderError("Search result format changed")
+    return found
+
+
+def _nuxt_search(html: str) -> tuple[list[dict], dict]:
+    return _nuxt_result_lists(html)[0]
 
 
 class MovieBoxProvider:
@@ -253,59 +261,66 @@ class MovieBoxProvider:
                     self.client.cookies.clear()
         raise ProviderError("Search unavailable")
 
-    def _rendered_search(self, keyword: str) -> tuple[list[dict], dict] | None:
+    def _rendered_items(self, keyword: str) -> list[dict]:
         try:
             response = self._request("GET", "/newWeb/searchResult", params={"keyword": keyword})
-            return _nuxt_search(response.text)
+            lists = _nuxt_result_lists(response.text)
         except ProviderError:
-            return None
+            return []
+        items = []
+        for group, _pager in lists:
+            items.extend(group)
+        return items
 
-    def _website_query(self, keyword: str) -> str:
-        # The exact title page often omits the multi-season series. The
-        # suggestion that adds "series" ("mr robot series") is the page that
-        # includes it. An equal spelling ("Mr. Robot") is the next best page.
+    def _website_queries(self, keyword: str) -> list[str]:
+        # One server-rendered page is not enough. The series can be on the
+        # suggestion that adds "series", on the exact title, or only in a later
+        # result list, and which page has it depends on the server's region.
         try:
             words = [word for word in self.suggestions(keyword) if word]
         except ProviderError:
-            return keyword
+            words = []
         wanted = _search_key(keyword)
-        series = next((word for word in words if _search_key(word).startswith(wanted) and "series" in word.casefold()), None)
-        exact = next((word for word in words if _search_key(word) == wanted), None)
-        return series or exact or keyword
+        series = [word for word in words if _search_key(word).startswith(wanted) and "series" in word.casefold()]
+        exact = [word for word in words if _search_key(word) == wanted]
+        queries = []
+        for word in [*series, *exact, keyword]:
+            if word not in queries:
+                queries.append(word)
+        return queries
 
     def search(self, keyword: str, page: int = 1) -> Page:
         def load():
-            # The website's first page is server-rendered and includes multi-season
-            # series the JSON search omits (for example Mr. Robot). Later pages still
-            # come from the JSON search, which is what the site uses to paginate.
-            rendered = self._rendered_search(self._website_query(keyword)) if page == 1 else None
+            rendered = []
+            if page == 1:
+                for query in self._website_queries(keyword):
+                    rendered.extend(self._rendered_items(query))
             try:
                 api_page = self._api_search(keyword, page)
             except ProviderError:
-                if not rendered or not rendered[0]:
+                if not rendered:
                     raise
                 api_page = None
-            if rendered and rendered[0]:
-                seen = set()
-                merged = []
-                for raw in rendered[0]:
-                    self._remember(raw)
-                    title = _title(raw)
-                    if title.id and title.id not in seen:
+            seen = set()
+            merged = []
+            for raw in rendered:
+                self._remember(raw)
+                title = _title(raw)
+                if title.id and title.id not in seen:
+                    seen.add(title.id)
+                    merged.append(title)
+            if api_page:
+                for title in api_page.items:
+                    if title.id not in seen:
                         seen.add(title.id)
                         merged.append(title)
-                if api_page:
-                    for title in api_page.items:
-                        if title.id not in seen:
-                            seen.add(title.id)
-                            merged.append(title)
-                    return Page(items=merged, page=1, next_page=api_page.next_page, has_more=api_page.has_more)
-                pager = rendered[1]
-                has_more = bool(pager.get("hasMore"))
-                return Page(items=merged, page=1, next_page=_number(pager.get("nextPage")) if has_more else None, has_more=has_more)
+            if not merged:
+                raise ProviderError("Search unavailable")
+            wanted = _search_key(keyword)
+            merged.sort(key=lambda title: 0 if _search_key(title.title).startswith(wanted) else 1)
             if api_page:
-                return api_page
-            raise ProviderError("Search unavailable")
+                return Page(items=merged, page=page, next_page=api_page.next_page, has_more=api_page.has_more)
+            return Page(items=merged, page=page, next_page=None, has_more=False)
         return self._cached(f"search:{keyword.casefold()}:{page}", load)
 
     def suggestions(self, keyword: str) -> list[str]:
