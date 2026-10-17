@@ -5,7 +5,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from scraper.app import app, provider
-from scraper.provider import MovieBoxProvider, ProviderError
+from scraper.models import Title
+from scraper.provider import MovieBoxProvider, ProviderError, _search_key, _search_rank
+
+def test_search_rank_puts_the_playable_series_ahead_of_the_same_named_movie():
+    wanted = _search_key("Mr. Robot")
+    series = Title(id="1", detail_path="1", kind="series", title="Mr. Robot", has_resource=True)
+    stub = Title(id="2", detail_path="2", kind="movie", title="Mr. Robot", has_resource=False)
+    assert _search_rank(series, wanted) < _search_rank(stub, wanted)
+
 
 SUBJECT = {
     "subjectId": "123", "subjectType": 1, "title": "Example Movie",

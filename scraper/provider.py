@@ -32,6 +32,25 @@ def _search_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.casefold())
 
 
+def _search_rank(title: Title, wanted: str) -> tuple:
+    # An empty movie named "Mr. Robot" shares the query with the series. The
+    # series that can actually play has to sort ahead of that stub.
+    key = _search_key(title.title)
+    exact = key == wanted
+    prefix = key.startswith(wanted)
+    series = title.kind == "series"
+    group = 4
+    if exact and series:
+        group = 0
+    elif prefix and series:
+        group = 1
+    elif exact:
+        group = 2
+    elif prefix:
+        group = 3
+    return (group, 0 if title.has_resource else 1)
+
+
 def _kind(value: int | None) -> str:
     return {1: "movie", 2: "series", 7: "short_series"}.get(value, "other")
 
@@ -179,11 +198,14 @@ class MovieBoxProvider:
             raise ProviderError(data.get("message") or "India catalog is unavailable")
         return data.get("data") or {}
 
-    def _mobile_search(self, keyword: str, page: int) -> list[dict]:
+    def _mobile_search(self, keyword: str, page: int, subject_type: int | None = None) -> list[dict]:
         if not self._mobile_enabled():
             return []
+        body = {"keyword": keyword, "page": page, "perPage": 20}
+        if subject_type is not None:
+            body["subjectType"] = subject_type
         try:
-            data = self._mobile_json("POST", "/wefeed-mobile-bff/subject-api/search", {"keyword": keyword, "page": page, "perPage": 20})
+            data = self._mobile_json("POST", "/wefeed-mobile-bff/subject-api/search", body)
         except ProviderError:
             return []
         items = []
@@ -391,6 +413,9 @@ class MovieBoxProvider:
                 for query in self._website_queries(keyword):
                     rendered.extend(self._rendered_items(query))
                 rendered.extend(self._mobile_search(keyword, page))
+                # The untyped catalog can lead with an unplayable movie of the
+                # same name and omit the series. The series-only query returns it.
+                rendered.extend(self._mobile_search(keyword, page, subject_type=2))
             try:
                 api_page = self._api_search(keyword, page)
             except ProviderError:
@@ -413,7 +438,7 @@ class MovieBoxProvider:
             if not merged:
                 raise ProviderError("Search unavailable")
             wanted = _search_key(keyword)
-            merged.sort(key=lambda title: 0 if _search_key(title.title).startswith(wanted) else 1)
+            merged.sort(key=lambda title: _search_rank(title, wanted))
             if api_page:
                 return Page(items=merged, page=page, next_page=api_page.next_page, has_more=api_page.has_more)
             return Page(items=merged, page=page, next_page=None, has_more=False)
