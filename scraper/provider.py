@@ -1,8 +1,12 @@
+import base64
+import hashlib
+import hmac
 import json
 import re
+import secrets
 import threading
 import time
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlsplit, urlparse
 
 import httpx
 
@@ -10,6 +14,12 @@ from .models import Caption, CatalogFilters, Detail, Dub, Episode, FilterGroup, 
 
 BASE_URL = "https://themoviebox.xyz"
 API_PATH = "/wefeed-h5api-bff"
+MOBILE_API = "https://api3.aoneroom.com"
+MOBILE_BOOT = "https://apig.inmoviebox.com/wefeed-mobile-bff/tab/ranking-list?tabId=0&categoryType=4516404531735022304&page=1&perPage=1"
+# Public app signing key used by the India MovieBox client. The website search
+# page omits some series, including Mr. Robot, when the request comes from a
+# hosting provider. This client sends region IN and still returns them.
+_MOBILE_SECRET = base64.b64decode(base64.b64decode("NzZpUmwwN3MweFNOOWpxbUVXQXQ3OUVCSlp1bElRSXNWNjRGWnIyTw=="))
 
 
 class ProviderError(Exception):
@@ -115,7 +125,92 @@ class MovieBoxProvider:
         self._subjects: dict[str, dict] = {}
         self._lock = threading.Lock()
         self._guest_token_value: str | None = None
+        self._mobile_token_value: str | None = None
+        self._mobile_device = secrets.token_hex(16)
         self.headers = {"Referer": f"{BASE_URL}/", "User-Agent": "Mozilla/5.0", "X-Request-Lang": "en"}
+
+    def _mobile_enabled(self) -> bool:
+        return type(getattr(self.client, "_transport", None)).__name__ != "MockTransport"
+
+    def _mobile_headers(self, method: str, url: str, body: str | None, token: str | None = None) -> dict:
+        timestamp = int(time.time() * 1000)
+        parsed = urlsplit(url)
+        if parsed.query:
+            pairs = [segment.split("=", 1) for segment in parsed.query.split("&") if segment]
+            pairs = sorted((item[0], item[1] if len(item) > 1 else "") for item in pairs)
+            canonical_url = parsed.path + "?" + "&".join(f"{key}={value}" for key, value in pairs)
+        else:
+            canonical_url = parsed.path or "/"
+        body_bytes = body.encode() if body is not None else None
+        body_length = str(len(body_bytes)) if body_bytes else ""
+        body_hash = hashlib.md5(body_bytes[:102400]).hexdigest() if body_bytes else ""
+        canonical = "\n".join(["GET" if method == "GET" else "POST", "application/json", "application/json", body_length, str(timestamp), body_hash, canonical_url])
+        signature = base64.b64encode(hmac.new(_MOBILE_SECRET, canonical.encode(), hashlib.md5).digest()).decode()
+        info = {"package_name": "com.community.mbox.in", "version_name": "4.0.03.0920.03", "version_code": 50020130, "os": "android", "os_version": "14", "device_id": self._mobile_device, "region": "IN", "timezone": "Asia/Calcutta"}
+        headers = {"user-agent": "com.community.mbox.in/50020130 (Linux; U; Android 14; en_IN)", "accept": "application/json", "content-type": "application/json", "x-client-token": f"{timestamp},{hashlib.md5(str(timestamp)[::-1].encode()).hexdigest()}", "x-tr-signature": f"{timestamp}|2|{signature}", "x-client-info": json.dumps(info, separators=(",", ":")), "x-client-status": "0"}
+        if token:
+            headers["authorization"] = f"Bearer {token}"
+        return headers
+
+    def _mobile_token(self) -> str:
+        with self._lock:
+            if self._mobile_token_value:
+                return self._mobile_token_value
+        response = httpx.get(MOBILE_BOOT, headers=self._mobile_headers("GET", MOBILE_BOOT, None), timeout=20)
+        if response.status_code != 200:
+            raise ProviderError("India catalog is unavailable")
+        token = json.loads(response.headers.get("x-user") or "{}").get("token")
+        if not token:
+            raise ProviderError("India catalog is unavailable")
+        with self._lock:
+            self._mobile_token_value = token
+        return token
+
+    def _mobile_json(self, method: str, path: str, body: dict | None = None) -> dict:
+        url = MOBILE_API + path
+        payload = json.dumps(body, separators=(",", ":")) if body is not None else None
+        token = self._mobile_token()
+        headers = self._mobile_headers(method, url, payload, token)
+        response = httpx.request(method, url, headers=headers, content=payload.encode() if payload else None, timeout=20)
+        if response.status_code != 200:
+            raise ProviderError("India catalog is unavailable")
+        data = response.json()
+        if data.get("code") not in (0, None):
+            raise ProviderError(data.get("message") or "India catalog is unavailable")
+        return data.get("data") or {}
+
+    def _mobile_search(self, keyword: str, page: int) -> list[dict]:
+        if not self._mobile_enabled():
+            return []
+        try:
+            data = self._mobile_json("POST", "/wefeed-mobile-bff/subject-api/search", {"keyword": keyword, "page": page, "perPage": 20})
+        except ProviderError:
+            return []
+        items = []
+        for raw in data.get("items") or []:
+            subject_id = str(raw.get("subjectId") or "")
+            if not subject_id:
+                continue
+            cover = raw.get("cover") or {}
+            items.append({"subjectId": subject_id, "subjectType": raw.get("subjectType"), "title": raw.get("title") or "", "description": raw.get("description") or "", "releaseDate": raw.get("releaseDate") or None, "duration": _number(raw.get("durationSeconds")), "genre": raw.get("genre") or "", "cover": cover if isinstance(cover, dict) else {}, "countryName": raw.get("countryName"), "imdbRatingValue": raw.get("imdbRatingValue"), "hasResource": raw.get("hasResource"), "detailPath": raw.get("detailPath") or subject_id})
+        return items
+
+    def _mobile_detail(self, subject_id: str) -> Detail:
+        data = self._mobile_json("GET", f"/wefeed-mobile-bff/subject-api/get?subjectId={subject_id}")
+        subject = dict(data)
+        subject["detailPath"] = subject.get("detailPath") or subject_id
+        subject["duration"] = _number(subject.get("durationSeconds"))
+        self._remember(subject)
+        seasons = []
+        if _kind(subject.get("subjectType")) != "movie":
+            info = self._mobile_json("GET", f"/wefeed-mobile-bff/subject-api/season-info?subjectId={subject_id}")
+            for season in info.get("seasons") or []:
+                number = int(season.get("se") or 0)
+                count = int(season.get("maxEp") or 0)
+                if number > 0 and count > 0:
+                    resolutions = sorted({int(item["resolution"]) for item in season.get("resolutions") or [] if item.get("resolution")})
+                    seasons.append(Season(number=number, episode_count=count, resolutions=resolutions))
+        return Detail(title=_title(subject), cast=[], seasons=seasons, dubs=[], trailer_url=None)
 
     def close(self):
         self.client.close()
@@ -295,6 +390,7 @@ class MovieBoxProvider:
             if page == 1:
                 for query in self._website_queries(keyword):
                     rendered.extend(self._rendered_items(query))
+                rendered.extend(self._mobile_search(keyword, page))
             try:
                 api_page = self._api_search(keyword, page)
             except ProviderError:
@@ -375,6 +471,11 @@ class MovieBoxProvider:
             raise ProviderError("Invalid detail path", 422)
 
         def load():
+            if detail_path.isdigit() and self._mobile_enabled():
+                try:
+                    return self._mobile_detail(detail_path)
+                except ProviderError:
+                    pass
             try:
                 data = self._data("/detail", params={"detailPath": detail_path})
             except ProviderError as exc:
@@ -422,6 +523,11 @@ class MovieBoxProvider:
             raise ProviderError("Series playback requires season and episode", 422)
         title_page = f"{BASE_URL}/movies/{detail_path}"
         data = self._data("/subject/play", params={"subjectId": title.id, "se": season, "ep": episode, "detailPath": detail_path, "streamSignType": 1, "supportCodecs[h264]": 1}, referer=title_page)
+        if not self._has_streams(data) and str(title.id).isdigit() and self._mobile_enabled():
+            try:
+                data = self._mobile_json("GET", f"/wefeed-mobile-bff/subject-api/play-info?subjectId={title.id}&se={season}&ep={episode}")
+            except ProviderError:
+                pass
         streams = []
         for value in (data.get("streams") or []) + (data.get("dash") or []) + (data.get("hls") or []):
             url = value.get("url")
