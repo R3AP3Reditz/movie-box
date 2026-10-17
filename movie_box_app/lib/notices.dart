@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:movie_box_app/nav_history.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -80,24 +81,22 @@ class CreditsScreen extends StatelessWidget {
             leading: const Icon(Icons.description_outlined),
             title: const Text('Movie Box license'),
             subtitle: const Text('Full terms, available offline'),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const BundledNoticeScreen(
-                  title: 'Movie Box license',
-                  asset: 'assets/notices/LICENSE',
-                ),
+            onTap: () => openPage(
+              context,
+              (_) => const BundledNoticeScreen(
+                title: 'Movie Box license',
+                asset: 'assets/notices/LICENSE',
               ),
             ),
           ),
           ListTile(
             leading: const Icon(Icons.people_outline),
             title: const Text('Project acknowledgments'),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const BundledNoticeScreen(
-                  title: 'Project acknowledgments',
-                  asset: 'assets/notices/CREDITS.md',
-                ),
+            onTap: () => openPage(
+              context,
+              (_) => const BundledNoticeScreen(
+                title: 'Project acknowledgments',
+                asset: 'assets/notices/CREDITS.md',
               ),
             ),
           ),

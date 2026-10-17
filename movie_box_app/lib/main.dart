@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,6 +8,7 @@ import 'package:video_player_media_kit/video_player_media_kit.dart';
 
 import 'api.dart';
 import 'desktop.dart';
+import 'nav_history.dart';
 import 'library.dart';
 import 'screens.dart';
 
@@ -96,10 +98,7 @@ class _TabMotion extends StatelessWidget {
           opacity: t,
           child: Transform.translate(
             offset: Offset((1 - t) * 84 * direction, (1 - t) * 10),
-            child: Transform.scale(
-              scale: 0.96 + 0.04 * t,
-              child: child,
-            ),
+            child: Transform.scale(scale: 0.96 + 0.04 * t, child: child),
           ),
         );
       },
@@ -121,6 +120,8 @@ class _MovieBoxAppState extends State<MovieBoxApp>
     token: widget.library.token,
   );
   int tab = 0;
+  final navigatorKey = GlobalKey<NavigatorState>();
+  final history = NavMemory();
   int tabFrom = 0;
   late final AnimationController tabMotion;
   final messengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -212,6 +213,8 @@ class _MovieBoxAppState extends State<MovieBoxApp>
       return null;
     });
     return MaterialApp(
+      navigatorKey: navigatorKey,
+      navigatorObservers: [history],
       scaffoldMessengerKey: messengerKey,
       title: 'MovieBox',
       debugShowCheckedModeBanner: false,
@@ -288,6 +291,19 @@ class _MovieBoxAppState extends State<MovieBoxApp>
             borderSide: BorderSide.none,
           ),
         ),
+      ),
+      builder: (context, child) => Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (event) {
+          final navigator = navigatorKey.currentState;
+          if (navigator == null) return;
+          if (event.buttons & kBackMouseButton != 0) {
+            navigator.maybePop();
+          } else if (event.buttons & kForwardMouseButton != 0) {
+            history.goForward(navigator);
+          }
+        },
+        child: child ?? const SizedBox.shrink(),
       ),
       home: LayoutBuilder(
         builder: (context, constraints) {

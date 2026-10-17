@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'api.dart';
 import 'desktop.dart';
@@ -10,6 +11,7 @@ import 'download_controls.dart';
 import 'library.dart';
 import 'loading.dart';
 import 'model.dart';
+import 'nav_history.dart';
 import 'notices.dart';
 import 'player.dart';
 
@@ -27,27 +29,24 @@ void openTitle(
 }) {
   if (title.path.isEmpty) return;
   if (resume == null) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) =>
-            DetailScreen(api: api, library: library, path: title.path),
-      ),
+    openPage(
+      context,
+      (_) => DetailScreen(api: api, library: library, path: title.path),
     );
     return;
   }
   final season = resume.season;
   final episode = resume.episode;
   final saved = library.downloads[viewingKey(title.path, season, episode)];
-  Navigator.of(context).push(
-    MaterialPageRoute(
-      builder: (_) => PlayerScreen(
-        api: api,
-        library: library,
-        title: title,
-        season: season,
-        episode: episode,
-        offline: saved != null && File(saved.path).existsSync() ? saved : null,
-      ),
+  openPage(
+    context,
+    (_) => PlayerScreen(
+      api: api,
+      library: library,
+      title: title,
+      season: season,
+      episode: episode,
+      offline: saved != null && File(saved.path).existsSync() ? saved : null,
     ),
   );
 }
@@ -352,17 +351,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   ])
                     ActionChip(
                       label: Text(category.$2),
-                      onPressed: () => Navigator.push(
+                      onPressed: () => openPage(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) => Scaffold(
-                            appBar: AppBar(title: Text(category.$2)),
-                            body: CatalogScreen(
-                              api: widget.api,
-                              library: widget.library,
-                              name: category.$1,
-                              label: category.$2,
-                            ),
+                        (_) => Scaffold(
+                          appBar: AppBar(title: Text(category.$2)),
+                          body: CatalogScreen(
+                            api: widget.api,
+                            library: widget.library,
+                            name: category.$1,
+                            label: category.$2,
                           ),
                         ),
                       ),
@@ -1210,23 +1207,20 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Future<void> play(MovieTitle title, {SavedDownload? offline}) async {
-    Navigator.of(context)
-        .push(
-          MaterialPageRoute(
-            builder: (_) => PlayerScreen(
-              api: widget.api,
-              library: widget.library,
-              title: title,
-              season: season,
-              episode: episode,
-              offline: offline,
-              resume: false,
-            ),
-          ),
-        )
-        .then((_) {
-          if (mounted) setState(() {});
-        });
+    openPage(
+      context,
+      (_) => PlayerScreen(
+        api: widget.api,
+        library: widget.library,
+        title: title,
+        season: season,
+        episode: episode,
+        offline: offline,
+        resume: false,
+      ),
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   Future<void> download(MovieTitle title) async {
@@ -1330,466 +1324,491 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: Text(
-        MediaQuery.sizeOf(context).width >= splitLayoutBreakpoint
-            ? 'Movie Box'
-            : 'Title details',
-      ),
-    ),
-    body: SafeArea(
-      top: false,
-      child: FutureBuilder<MovieDetail>(
-        future: future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done ||
-              !snapshot.hasData) {
-            return Center(
-              child:
-                  snapshot.connectionState == ConnectionState.done &&
-                      snapshot.hasError
-                  ? ErrorPanel(
-                      error: snapshot.error!,
-                      retry: () => setState(() {
-                        future = loadDetail();
-                      }),
-                    )
-                  : const MovieBoxLoader(label: 'Loading details'),
-            );
-          }
-          final detail = snapshot.data!;
-          final title = detail.title;
-          final task = widget.library.taskFor(title, season, episode);
-          final watch =
-              widget.library.history[viewingKey(title.path, season, episode)];
-          final saved =
-              widget.library.downloads[viewingKey(title.path, season, episode)];
-          final wide =
-              MediaQuery.sizeOf(context).width >= splitLayoutBreakpoint;
-          return ListView(
-            children: [
-              if (wide)
-                ContentFrame(
-                  maxWidth: 1140,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(18),
-                      child: SizedBox(
-                        height: 380,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Artwork(
-                              url: title.backdrop ?? title.poster,
-                              width: 1600,
-                            ),
-                            const DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Color(0x22000000),
-                                    Color(0xF0101519),
-                                  ],
+  Widget build(BuildContext context) => CallbackShortcuts(
+    bindings: {
+      SingleActivator(LogicalKeyboardKey.escape): () {
+        Navigator.of(context).maybePop();
+      },
+    },
+    child: Focus(
+      autofocus: true,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(
+            MediaQuery.sizeOf(context).width >= splitLayoutBreakpoint
+                ? 'Movie Box'
+                : 'Title details',
+          ),
+        ),
+        body: SafeArea(
+          top: false,
+          child: FutureBuilder<MovieDetail>(
+            future: future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done ||
+                  !snapshot.hasData) {
+                return Center(
+                  child:
+                      snapshot.connectionState == ConnectionState.done &&
+                          snapshot.hasError
+                      ? ErrorPanel(
+                          error: snapshot.error!,
+                          retry: () => setState(() {
+                            future = loadDetail();
+                          }),
+                        )
+                      : const MovieBoxLoader(label: 'Loading details'),
+                );
+              }
+              final detail = snapshot.data!;
+              final title = detail.title;
+              final task = widget.library.taskFor(title, season, episode);
+              final saved = widget
+                  .library
+                  .downloads[viewingKey(title.path, season, episode)];
+              final wide =
+                  MediaQuery.sizeOf(context).width >= splitLayoutBreakpoint;
+              return ListView(
+                children: [
+                  if (wide)
+                    ContentFrame(
+                      maxWidth: 1140,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: SizedBox(
+                            height: 380,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Artwork(
+                                  url: title.backdrop ?? title.poster,
+                                  width: 1600,
                                 ),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.all(22),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(12),
-                                    child: SizedBox(
-                                      width: 150,
-                                      child: AspectRatio(
-                                        aspectRatio: 2 / 3,
-                                        child: Artwork(
-                                          url: title.poster ?? title.backdrop,
-                                          width: 420,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 22),
-                                  Expanded(
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          title.title,
-                                          style: const TextStyle(
-                                            fontSize: 34,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          [
-                                            title.kind.toUpperCase(),
-                                            if (title.rating != null)
-                                              'IMDb ${title.rating}',
-                                            ...title.genres.take(3),
-                                          ].join('  ·  '),
-                                          style: const TextStyle(
-                                            color: Color(0xFFD5DCDE),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 14),
-                                        Row(
-                                          children: [
-                                            FilledButton.icon(
-                                              onPressed:
-                                                  title.available &&
-                                                      (detail.seasons.isEmpty ||
-                                                          episode > 0)
-                                                  ? () => play(
-                                                      title,
-                                                      offline:
-                                                          saved != null &&
-                                                              File(saved.path)
-                                                                  .existsSync()
-                                                          ? saved
-                                                          : null,
-                                                    )
-                                                  : null,
-                                              icon: const Icon(
-                                                Icons.play_arrow,
-                                              ),
-                                              label: const Text('Play'),
-                                            ),
-                                            const SizedBox(width: 10),
-                                            OutlinedButton.icon(
-                                              onPressed:
-                                                  busy ||
-                                                      task.active ||
-                                                      !title.available ||
-                                                      (detail
-                                                              .seasons
-                                                              .isNotEmpty &&
-                                                          episode == 0)
-                                                  ? null
-                                                  : () => download(title),
-                                              icon: const Icon(
-                                                Icons.download_outlined,
-                                              ),
-                                              label: Text(
-                                                downloadLabel ?? 'Download',
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            IconButton(
-                                              tooltip:
-                                                  widget.library.bookmarks
-                                                      .containsKey(title.path)
-                                                  ? 'Remove bookmark'
-                                                  : 'Bookmark show',
-                                              onPressed: () => widget.library
-                                                  .toggleBookmark(title),
-                                              icon: Icon(
-                                                widget.library.bookmarks
-                                                        .containsKey(title.path)
-                                                    ? Icons.bookmark
-                                                    : Icons.bookmark_border,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
+                                const DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Color(0x22000000),
+                                        Color(0xF0101519),
                                       ],
                                     ),
                                   ),
-                                ],
-                              ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.all(22),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: SizedBox(
+                                          width: 150,
+                                          child: AspectRatio(
+                                            aspectRatio: 2 / 3,
+                                            child: Artwork(
+                                              url:
+                                                  title.poster ??
+                                                  title.backdrop,
+                                              width: 420,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 22),
+                                      Expanded(
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.end,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              title.title,
+                                              style: const TextStyle(
+                                                fontSize: 34,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              [
+                                                title.kind.toUpperCase(),
+                                                if (title.rating != null)
+                                                  'IMDb ${title.rating}',
+                                                ...title.genres.take(3),
+                                              ].join('  ·  '),
+                                              style: const TextStyle(
+                                                color: Color(0xFFD5DCDE),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 14),
+                                            Row(
+                                              children: [
+                                                FilledButton.icon(
+                                                  onPressed:
+                                                      title.available &&
+                                                          (detail
+                                                                  .seasons
+                                                                  .isEmpty ||
+                                                              episode > 0)
+                                                      ? () => play(
+                                                          title,
+                                                          offline:
+                                                              saved != null &&
+                                                                  File(
+                                                                    saved.path,
+                                                                  ).existsSync()
+                                                              ? saved
+                                                              : null,
+                                                        )
+                                                      : null,
+                                                  icon: const Icon(
+                                                    Icons.play_arrow,
+                                                  ),
+                                                  label: const Text('Play'),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                OutlinedButton.icon(
+                                                  onPressed:
+                                                      busy ||
+                                                          task.active ||
+                                                          !title.available ||
+                                                          (detail
+                                                                  .seasons
+                                                                  .isNotEmpty &&
+                                                              episode == 0)
+                                                      ? null
+                                                      : () => download(title),
+                                                  icon: const Icon(
+                                                    Icons.download_outlined,
+                                                  ),
+                                                  label: Text(
+                                                    downloadLabel ?? 'Download',
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                IconButton(
+                                                  tooltip:
+                                                      widget.library.bookmarks
+                                                          .containsKey(
+                                                            title.path,
+                                                          )
+                                                      ? 'Remove bookmark'
+                                                      : 'Bookmark show',
+                                                  onPressed: () => widget
+                                                      .library
+                                                      .toggleBookmark(title),
+                                                  icon: Icon(
+                                                    widget.library.bookmarks
+                                                            .containsKey(
+                                                              title.path,
+                                                            )
+                                                        ? Icons.bookmark
+                                                        : Icons.bookmark_border,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
+                      ),
+                    )
+                  else
+                    SizedBox(
+                      height: 230,
+                      child: Artwork(
+                        url: title.backdrop ?? title.poster,
+                        width: 1080,
+                      ),
+                    ),
+                  ContentFrame(
+                    maxWidth: 1140,
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (wide)
+                                  Text(
+                                    title.description.isEmpty
+                                        ? 'No synopsis available.'
+                                        : title.description,
+                                  )
+                                else
+                                  Text(
+                                    title.title,
+                                    style: const TextStyle(
+                                      fontSize: 29,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                if (!wide) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    [
+                                      title.kind.toUpperCase(),
+                                      if (title.rating != null)
+                                        'IMDb ${title.rating}',
+                                      ...title.genres.take(3),
+                                    ].join('  ·  '),
+                                    style: const TextStyle(
+                                      color: Color(0xFFBCC8C9),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  Text(
+                                    title.description.isEmpty
+                                        ? 'No synopsis available.'
+                                        : title.description,
+                                  ),
+                                  const SizedBox(height: 20),
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth: wide ? 320 : double.infinity,
+                                    ),
+                                    child: FilledButton.icon(
+                                      onPressed:
+                                          title.available &&
+                                              (detail.seasons.isEmpty ||
+                                                  episode > 0)
+                                          ? () => play(
+                                              title,
+                                              offline:
+                                                  saved != null &&
+                                                      File(saved.path)
+                                                          .existsSync()
+                                                  ? saved
+                                                  : null,
+                                            )
+                                          : null,
+                                      icon: const Icon(Icons.play_arrow),
+                                      label: const Text('Play'),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  OutlinedButton.icon(
+                                    onPressed: () =>
+                                        widget.library.toggleBookmark(title),
+                                    icon: Icon(
+                                      widget.library.bookmarks.containsKey(
+                                            title.path,
+                                          )
+                                          ? Icons.bookmark
+                                          : Icons.bookmark_border,
+                                    ),
+                                    label: Text(
+                                      widget.library.bookmarks.containsKey(
+                                            title.path,
+                                          )
+                                          ? 'Bookmarked'
+                                          : 'Bookmark show',
+                                    ),
+                                  ),
+                                  if (detail.seasons.isNotEmpty && episode == 0)
+                                    const Text(
+                                      'Choose an episode to play or download.',
+                                    ),
+                                  const SizedBox(height: 7),
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth: wide ? 320 : double.infinity,
+                                    ),
+                                    child: OutlinedButton.icon(
+                                      onPressed:
+                                          busy ||
+                                              task.active ||
+                                              !title.available ||
+                                              (detail.seasons.isNotEmpty &&
+                                                  episode == 0)
+                                          ? null
+                                          : () => download(title),
+                                      icon: downloadLabel == null
+                                          ? const Icon(Icons.download_outlined)
+                                          : const SizedBox.shrink(),
+                                      label: downloadLabel == null
+                                          ? const Text('Download MP4')
+                                          : MovieBoxLoader(
+                                              label: downloadLabel!,
+                                              compact: true,
+                                            ),
+                                    ),
+                                  ),
+                                  if (saved != null &&
+                                      File(saved.path).existsSync())
+                                    TextButton.icon(
+                                      onPressed: () =>
+                                          play(title, offline: saved),
+                                      icon: const Icon(Icons.offline_pin),
+                                      label: Text(
+                                        'Play downloaded ${saved.resolution}p',
+                                      ),
+                                    ),
+                                  DownloadControls(task: task),
+                                ],
+                                if (detail.seasons.isNotEmpty) ...[
+                                  const SizedBox(height: 20),
+                                  Row(
+                                    children: [
+                                      const Expanded(
+                                        child: Text(
+                                          'Episodes',
+                                          style: TextStyle(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Find episode',
+                                        icon: Icon(
+                                          showEpisodeSearch
+                                              ? Icons.close
+                                              : Icons.search,
+                                        ),
+                                        onPressed: () => setState(() {
+                                          showEpisodeSearch =
+                                              !showEpisodeSearch;
+                                          if (!showEpisodeSearch) {
+                                            episodeSearch.clear();
+                                          }
+                                        }),
+                                      ),
+                                    ],
+                                  ),
+                                  if (showEpisodeSearch)
+                                    TextField(
+                                      controller: episodeSearch,
+                                      keyboardType: TextInputType.text,
+                                      decoration: const InputDecoration(
+                                        hintText: 'Episode number, or S2 E4',
+                                        prefixIcon: Icon(Icons.search),
+                                        isDense: true,
+                                      ),
+                                      onChanged: (_) => setState(() {}),
+                                    ),
+                                  const SizedBox(height: 8),
+                                  DropdownButton<int>(
+                                    value:
+                                        detail.seasons.any(
+                                          (s) => s.number == season,
+                                        )
+                                        ? season
+                                        : detail.seasons.first.number,
+                                    items: [
+                                      for (final s in detail.seasons)
+                                        DropdownMenuItem(
+                                          value: s.number,
+                                          child: Text('Season ${s.number}'),
+                                        ),
+                                    ],
+                                    onChanged: (value) => setState(() {
+                                      season = value!;
+                                      episode = 1;
+                                    }),
+                                  ),
+                                  Builder(
+                                    builder: (context) {
+                                      final matches = visibleEpisodes(detail);
+                                      final searching =
+                                          showEpisodeSearch &&
+                                          episodeSearch.text.trim().isNotEmpty;
+                                      if (matches.isEmpty) {
+                                        return const Padding(
+                                          padding: EdgeInsets.only(top: 8),
+                                          child: Text(
+                                            'No episode matches that.',
+                                          ),
+                                        );
+                                      }
+                                      return Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: [
+                                          for (final item in matches)
+                                            ChoiceChip(
+                                              label: Text(
+                                                searching
+                                                    ? 'S${item.$1} E${item.$2}'
+                                                    : '${item.$2}',
+                                              ),
+                                              selected:
+                                                  episode == item.$2 &&
+                                                  season == item.$1,
+                                              onSelected: (_) => setState(() {
+                                                season = item.$1;
+                                                episode = item.$2;
+                                              }),
+                                            ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                ],
+                                if (detail.dubs.isNotEmpty) ...[
+                                  const SizedBox(height: 18),
+                                  const Text(
+                                    'Other audio versions',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  for (final dub in detail.dubs)
+                                    ListTile(
+                                      title: Text(dub.title),
+                                      trailing: const Icon(Icons.chevron_right),
+                                      onTap: () => openTitle(
+                                        context,
+                                        widget.api,
+                                        widget.library,
+                                        dub,
+                                      ),
+                                    ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                )
-              else
-                SizedBox(
-                  height: 230,
-                  child: Artwork(
-                    url: title.backdrop ?? title.poster,
-                    width: 1080,
+                  FutureBuilder<MoviePage>(
+                    future: widget.api.recommendations(widget.path),
+                    builder: (_, result) =>
+                        result.hasData && result.data!.items.isNotEmpty
+                        ? MovieRow(
+                            'You might also like',
+                            result.data!.items,
+                            (item) => openTitle(
+                              context,
+                              widget.api,
+                              widget.library,
+                              item,
+                            ),
+                          )
+                        : const SizedBox.shrink(),
                   ),
-                ),
-              ContentFrame(
-                maxWidth: 1140,
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (wide)
-                              Text(
-                                title.description.isEmpty
-                                    ? 'No synopsis available.'
-                                    : title.description,
-                              )
-                            else
-                              Text(
-                                title.title,
-                                style: const TextStyle(
-                                  fontSize: 29,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            if (!wide) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                [
-                                  title.kind.toUpperCase(),
-                                  if (title.rating != null)
-                                    'IMDb ${title.rating}',
-                                  ...title.genres.take(3),
-                                ].join('  ·  '),
-                                style: const TextStyle(
-                                  color: Color(0xFFBCC8C9),
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                              Text(
-                                title.description.isEmpty
-                                    ? 'No synopsis available.'
-                                    : title.description,
-                              ),
-                              const SizedBox(height: 20),
-                              ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: wide ? 320 : double.infinity,
-                                ),
-                                child: FilledButton.icon(
-                                  onPressed:
-                                      title.available &&
-                                          (detail.seasons.isEmpty ||
-                                              episode > 0)
-                                      ? () => play(
-                                          title,
-                                          offline:
-                                              saved != null &&
-                                                  File(saved.path).existsSync()
-                                              ? saved
-                                              : null,
-                                        )
-                                      : null,
-                                  icon: const Icon(Icons.play_arrow),
-                                  label: const Text('Play'),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              OutlinedButton.icon(
-                                onPressed: () =>
-                                    widget.library.toggleBookmark(title),
-                                icon: Icon(
-                                  widget.library.bookmarks.containsKey(
-                                        title.path,
-                                      )
-                                      ? Icons.bookmark
-                                      : Icons.bookmark_border,
-                                ),
-                                label: Text(
-                                  widget.library.bookmarks.containsKey(
-                                        title.path,
-                                      )
-                                      ? 'Bookmarked'
-                                      : 'Bookmark show',
-                                ),
-                              ),
-                              if (detail.seasons.isNotEmpty && episode == 0)
-                                const Text(
-                                  'Choose an episode to play or download.',
-                                ),
-                              const SizedBox(height: 7),
-                              ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: wide ? 320 : double.infinity,
-                                ),
-                                child: OutlinedButton.icon(
-                                  onPressed:
-                                      busy ||
-                                          task.active ||
-                                          !title.available ||
-                                          (detail.seasons.isNotEmpty &&
-                                              episode == 0)
-                                      ? null
-                                      : () => download(title),
-                                  icon: downloadLabel == null
-                                      ? const Icon(Icons.download_outlined)
-                                      : const SizedBox.shrink(),
-                                  label: downloadLabel == null
-                                      ? const Text('Download MP4')
-                                      : MovieBoxLoader(
-                                          label: downloadLabel!,
-                                          compact: true,
-                                        ),
-                                ),
-                              ),
-                              if (saved != null &&
-                                  File(saved.path).existsSync())
-                                TextButton.icon(
-                                  onPressed: () => play(title, offline: saved),
-                                  icon: const Icon(Icons.offline_pin),
-                                  label: Text(
-                                    'Play downloaded ${saved.resolution}p',
-                                  ),
-                                ),
-                              DownloadControls(task: task),
-                            ],
-                            if (detail.seasons.isNotEmpty) ...[
-                              const SizedBox(height: 20),
-                              Row(
-                                children: [
-                                  const Expanded(
-                                    child: Text(
-                                      'Episodes',
-                                      style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                  IconButton(
-                                    tooltip: 'Find episode',
-                                    icon: Icon(
-                                      showEpisodeSearch
-                                          ? Icons.close
-                                          : Icons.search,
-                                    ),
-                                    onPressed: () => setState(() {
-                                      showEpisodeSearch = !showEpisodeSearch;
-                                      if (!showEpisodeSearch) {
-                                        episodeSearch.clear();
-                                      }
-                                    }),
-                                  ),
-                                ],
-                              ),
-                              if (showEpisodeSearch)
-                                TextField(
-                                  controller: episodeSearch,
-                                  keyboardType: TextInputType.text,
-                                  decoration: const InputDecoration(
-                                    hintText: 'Episode number, or S2 E4',
-                                    prefixIcon: Icon(Icons.search),
-                                    isDense: true,
-                                  ),
-                                  onChanged: (_) => setState(() {}),
-                                ),
-                              const SizedBox(height: 8),
-                              DropdownButton<int>(
-                                value:
-                                    detail.seasons.any(
-                                      (s) => s.number == season,
-                                    )
-                                    ? season
-                                    : detail.seasons.first.number,
-                                items: [
-                                  for (final s in detail.seasons)
-                                    DropdownMenuItem(
-                                      value: s.number,
-                                      child: Text('Season ${s.number}'),
-                                    ),
-                                ],
-                                onChanged: (value) => setState(() {
-                                  season = value!;
-                                  episode = 1;
-                                }),
-                              ),
-                              Builder(
-                                builder: (context) {
-                                  final matches = visibleEpisodes(detail);
-                                  final searching =
-                                      showEpisodeSearch &&
-                                      episodeSearch.text.trim().isNotEmpty;
-                                  if (matches.isEmpty) {
-                                    return const Padding(
-                                      padding: EdgeInsets.only(top: 8),
-                                      child: Text('No episode matches that.'),
-                                    );
-                                  }
-                                  return Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: [
-                                      for (final item in matches)
-                                        ChoiceChip(
-                                          label: Text(
-                                            searching
-                                                ? 'S${item.$1} E${item.$2}'
-                                                : '${item.$2}',
-                                          ),
-                                          selected:
-                                              episode == item.$2 &&
-                                              season == item.$1,
-                                          onSelected: (_) => setState(() {
-                                            season = item.$1;
-                                            episode = item.$2;
-                                          }),
-                                        ),
-                                    ],
-                                  );
-                                },
-                              ),
-                            ],
-                            if (detail.dubs.isNotEmpty) ...[
-                              const SizedBox(height: 18),
-                              const Text(
-                                'Other audio versions',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              for (final dub in detail.dubs)
-                                ListTile(
-                                  title: Text(dub.title),
-                                  trailing: const Icon(Icons.chevron_right),
-                                  onTap: () => openTitle(
-                                    context,
-                                    widget.api,
-                                    widget.library,
-                                    dub,
-                                  ),
-                                ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              FutureBuilder<MoviePage>(
-                future: widget.api.recommendations(widget.path),
-                builder: (_, result) =>
-                    result.hasData && result.data!.items.isNotEmpty
-                    ? MovieRow(
-                        'You might also like',
-                        result.data!.items,
-                        (item) => openTitle(
-                          context,
-                          widget.api,
-                          widget.library,
-                          item,
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-            ],
-          );
-        },
+                ],
+              );
+            },
+          ),
+        ),
       ),
     ),
   );
@@ -1896,17 +1915,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
             subtitle: Text(
               '${entry.resolution}p${entry.season > 0 ? ' · S${entry.season} E${entry.episode}' : ''} · ${entry.subtitlePath != null && File(entry.subtitlePath!).existsSync() ? 'Subtitles saved' : 'No subtitles'}',
             ),
-            onTap: () => Navigator.push(
+            onTap: () => openPage(
               context,
-              MaterialPageRoute(
-                builder: (_) => PlayerScreen(
-                  api: widget.api,
-                  library: widget.library,
-                  title: entry.title,
-                  season: entry.season,
-                  episode: entry.episode,
-                  offline: entry,
-                ),
+              (_) => PlayerScreen(
+                api: widget.api,
+                library: widget.library,
+                title: entry.title,
+                season: entry.season,
+                episode: entry.episode,
+                offline: entry,
               ),
             ),
             trailing: IconButton(
@@ -1971,30 +1988,26 @@ class _LibraryScreenState extends State<LibraryScreen> {
             onTap: () {
               final saved = widget.library.downloads[entry.key];
               if (saved != null && File(saved.path).existsSync()) {
-                Navigator.push(
+                openPage(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => PlayerScreen(
-                      api: widget.api,
-                      library: widget.library,
-                      title: entry.title,
-                      season: entry.season,
-                      episode: entry.episode,
-                      offline: saved,
-                    ),
+                  (_) => PlayerScreen(
+                    api: widget.api,
+                    library: widget.library,
+                    title: entry.title,
+                    season: entry.season,
+                    episode: entry.episode,
+                    offline: saved,
                   ),
                 );
               } else {
-                Navigator.push(
+                openPage(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => PlayerScreen(
-                      api: widget.api,
-                      library: widget.library,
-                      title: entry.title,
-                      season: entry.season,
-                      episode: entry.episode,
-                    ),
+                  (_) => PlayerScreen(
+                    api: widget.api,
+                    library: widget.library,
+                    title: entry.title,
+                    season: entry.season,
+                    episode: entry.episode,
                   ),
                 );
               }
@@ -2198,9 +2211,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             leading: const Icon(Icons.info_outline),
             title: const Text('Credits and licenses'),
             subtitle: const Text('Movie Box by R3AP3R Editz'),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const CreditsScreen()),
-            ),
+            onTap: () => openPage(context, (_) => const CreditsScreen()),
           ),
         ],
       ),

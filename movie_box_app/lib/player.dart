@@ -972,10 +972,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
     controlsTimer?.cancel();
     if (mounted && !controlsVisible) setState(() => controlsVisible = true);
     controlsTimer = Timer(
-      Duration(seconds: MediaQuery.sizeOf(context).shortestSide >= 500 ? 8 : 3),
+      Duration(seconds: desktopWindow ? 4 : 3),
       () {
+        final playing = controller?.value.isPlaying == true;
         if (mounted &&
-            controller?.value.isPlaying == true &&
+            (desktopWindow || playing) &&
             !tvControlsFocus.hasFocus &&
             (!videoFocus.hasFocus || videoFocus.hasPrimaryFocus)) {
           setState(() => controlsVisible = false);
@@ -2497,7 +2498,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
           if (!tvMode) toggleFullscreen();
         },
         const SingleActivator(LogicalKeyboardKey.escape): () {
-          if (fullscreen) toggleFullscreen();
+          if (fullscreen && !tvMode) {
+            toggleFullscreen();
+            return;
+          }
+          Navigator.of(context).maybePop();
         },
       },
       child: PopScope(
@@ -2743,8 +2748,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                                 ),
                                             ],
                                             onChanged: (value) {
-                                              if (value != null)
+                                              if (value != null) {
                                                 changeEpisode(value, 1);
+                                              }
                                             },
                                           ),
                                         ),
