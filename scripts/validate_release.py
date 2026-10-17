@@ -15,8 +15,10 @@ def validate(version, build_number, pages, current_version):
     if build > 2100000000:
         raise ValueError("Build number exceeds Android's maximum of 2100000000.")
     current_name, current_build = current_version.split("+")
-    highest_build = int(current_build)
-    highest_version = tuple(map(int, current_name.split(".")))
+    source_version = tuple(map(int, current_name.split(".")))
+    source_build = int(current_build)
+    published_version = (0, 0, 0)
+    published_build = 0
     for page in pages:
         for release in page:
             tag = release["tag_name"]
@@ -26,14 +28,19 @@ def validate(version, build_number, pages, current_version):
                 continue
             match = VERSION.fullmatch(tag.removeprefix("v"))
             if match:
-                highest_version = max(highest_version, tuple(map(int, match.groups())))
+                published_version = max(published_version, tuple(map(int, match.groups())))
             match = re.search(r"^Build number: ([0-9]+)$", release.get("body") or "", re.MULTILINE)
             if match:
-                highest_build = max(highest_build, int(match[1]))
-    if tuple(map(int, version.split("."))) <= highest_version:
-        raise ValueError("Version must be newer than the source version and published releases.")
-    if build <= highest_build:
-        raise ValueError(f"Build number must exceed {highest_build} to support Android updates.")
+                published_build = max(published_build, int(match[1]))
+    requested = tuple(map(int, version.split(".")))
+    if requested < source_version:
+        raise ValueError("Version must be at least the source version.")
+    if requested <= published_version:
+        raise ValueError("Version must be newer than published releases.")
+    if build < source_build:
+        raise ValueError(f"Build number must be at least {source_build}.")
+    if build <= published_build:
+        raise ValueError(f"Build number must exceed {published_build} to support Android updates.")
 
 
 def main():

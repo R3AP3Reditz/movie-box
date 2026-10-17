@@ -327,15 +327,14 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             ScreenHeader('MovieBox', onRefresh: reload),
             PopularCarousel(
-              titles: home.sections
+              titles: home.banners,
+              fallback: home.sections
                   .where(
-                    (section) =>
-                        section.title.toLowerCase().contains('popular'),
+                    (section) => section.title.toLowerCase().contains('trend'),
                   )
                   .expand((section) => section.items)
-                  .take(6)
+                  .take(8)
                   .toList(),
-              fallback: home.banners,
               onTap: (title) =>
                   openTitle(context, widget.api, widget.library, title),
             ),
@@ -410,9 +409,30 @@ class PopularCarousel extends StatefulWidget {
 class _PopularCarouselState extends State<PopularCarousel> {
   int index = 0;
   final pages = PageController();
+  Timer? autoplay;
+
+  @override
+  void initState() {
+    super.initState();
+    autoplay = Timer.periodic(const Duration(seconds: 6), (_) => step(1));
+  }
+
+  void step(int delta) {
+    if (!pages.hasClients) return;
+    final titles = widget.titles.isEmpty ? widget.fallback : widget.titles;
+    if (titles.length < 2) return;
+    final next = (index + delta) % titles.length;
+    final target = next < 0 ? titles.length - 1 : next;
+    pages.animateToPage(
+      target,
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+    );
+  }
 
   @override
   void dispose() {
+    autoplay?.cancel();
     pages.dispose();
     super.dispose();
   }
@@ -500,22 +520,18 @@ class _PopularCarouselState extends State<PopularCarousel> {
                 },
               ),
               if (desktop)
-                for (final (alignment, icon, target) in [
-                  (Alignment.centerLeft, Icons.chevron_left, index - 1),
-                  (Alignment.centerRight, Icons.chevron_right, index + 1),
+                for (final (alignment, icon) in [
+                  (Alignment.centerLeft, Icons.chevron_left),
+                  (Alignment.centerRight, Icons.chevron_right),
                 ])
-                  if (target >= 0 && target < titles.length)
+                  if (titles.length > 1)
                     Align(
                       alignment: alignment,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 26),
                         child: _CarouselArrow(
                           icon: icon,
-                          onPressed: () => pages.animateToPage(
-                            target,
-                            duration: const Duration(milliseconds: 250),
-                            curve: Curves.easeOut,
-                          ),
+                          onPressed: () => step(icon == Icons.chevron_left ? -1 : 1),
                         ),
                       ),
                     ),

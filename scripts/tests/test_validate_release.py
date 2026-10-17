@@ -17,8 +17,11 @@ class ReleaseValidationTests(unittest.TestCase):
             with self.subTest(build=build), self.assertRaises(ValueError):
                 validate("1.0.3", build, [[]], "1.0.2+3")
 
-    def test_source_version_and_build_must_increase(self):
-        for version, build in (("1.0.2", "4"), ("0.9.0", "4"), ("1.0.3", "3")):
+    def test_source_version_can_match(self):
+        validate("1.0.2", "3", [[]], "1.0.2+3")
+
+    def test_source_version_and_build_must_not_decrease(self):
+        for version, build in (("1.0.1", "4"), ("0.9.0", "4"), ("1.0.3", "2")):
             with self.subTest(version=version, build=build), self.assertRaises(ValueError):
                 validate(version, build, [[]], "1.0.2+3")
 

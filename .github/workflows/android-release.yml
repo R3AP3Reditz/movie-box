@@ -117,8 +117,99 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  linux:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+      - name: Linux libraries
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-14-dev rpm
+      - name: Build and package
+        working-directory: movie_box_app
+        run: |
+          set -euo pipefail
+          flutter pub get --enforce-lockfile
+          flutter build linux --release --build-name "$VERSION" --build-number "${{ inputs.build_number }}"
+          chmod +x ../scripts/package_linux.sh
+          ../scripts/package_linux.sh "$VERSION" build/linux/x64/release/bundle ../release android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: linux-release
+          path: release/
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+      - name: Build Windows app
+        working-directory: movie_box_app
+        run: |
+          flutter pub get --enforce-lockfile
+          flutter build windows --release --build-name "$env:VERSION" --build-number "${{ inputs.build_number }}"
+          New-Item -ItemType Directory -Force -Path ../release | Out-Null
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath "../release/MovieBox-$env:VERSION-windows-x64.zip"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-release
+          path: release/
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+      - name: Build macOS app
+        working-directory: movie_box_app
+        run: |
+          set -euo pipefail
+          flutter pub get --enforce-lockfile
+          flutter build macos --release --build-name "$VERSION" --build-number "${{ inputs.build_number }}"
+          mkdir -p ../release
+          ditto -c -k --keepParent "build/macos/Build/Products/Release/Runner.app" "../release/MovieBox-$VERSION-macos.zip"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macos-release
+          path: release/
+          if-no-files-found: error
+          retention-days: 7
+
   publish:
-    needs: build
+    needs: [build, linux, windows, macos]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -132,17 +223,19 @@ jobs:
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: android-release
+          pattern: '*-release'
+          merge-multiple: true
           path: release
 
       - name: Publish GitHub release
         run: |
           set -euo pipefail
           cd release
-          sha256sum --check SHA256SUMS
-          printf 'Android production release.\n\nBuild number: %s\nSource commit: %s\n\n## What'"'"'s new\n\n- Speed and Subtitles sit at the top right of the player.\n- Subtitles open in a panel on the right. Position, timing, background darkness, and text size update on the video while the panel is open. Tap the picture outside the panel to close it.\n- Language is a dropdown under those controls. Position, background, text size, and the chosen language are saved on the device and used for later videos. The timing offset applies only to the video you are watching.\n- A downloaded episode plays from the phone instead of streaming.\n- On a series page, Play and Download are above the episode list. Episode search accepts an episode number or a label such as S2 E4.\n- Catalog search keeps multi-season series that the site lists, including a different spelling such as "mr robot" for "Mr. Robot".\n\nInstall MovieBox-%s.apk. SHA256SUMS contains its SHA-256 checksum; signing-certificate.txt identifies the signing certificate.\n\nAndroid phones, tablets, and Android TV only.\n\nBackground downloads continue on Android with progress notifications. Manage the persistent queue in Downloads with pause, resume, cancel, and retry. Android force-stop and battery restrictions can interrupt downloads; reopen MovieBox to recover the queue and resume or retry interrupted items. Allow MovieBox notifications to start, resume, or retry downloads; if denied, enable them in Android Settings. Pause/resume depends on server support and link availability. Unknown-length sources are rejected; choose another quality.\n\nA previous installation signed with a different key must be uninstalled first, which removes its local app data.\n' \
-            "$BUILD_NUMBER" "$RELEASE_COMMIT" "$VERSION" > "$RUNNER_TEMP/release-notes.md"
-          gh release create "v$VERSION" "MovieBox-$VERSION.apk" SHA256SUMS signing-certificate.txt \
+          rm -f SHA256SUMS
+          sha256sum -- * > SHA256SUMS
+          printf 'Movie Box %s, build %s.\nSource commit: %s\n\nInstall one file:\n- Android: MovieBox-%s.apk\n- Windows: MovieBox-%s-windows-x64.zip\n- macOS: MovieBox-%s-macos.zip (unsigned)\n- Linux: MovieBox-%s-linux-x64.deb, .rpm, or .AppImage\n\nSHA256SUMS lists every file. signing-certificate.txt identifies the Android signing certificate.\n' \
+            "$VERSION" "$BUILD_NUMBER" "$RELEASE_COMMIT" "$VERSION" "$VERSION" "$VERSION" "$VERSION" > "$RUNNER_TEMP/release-notes.md"
+          gh release create "v$VERSION" ./* \
             --target "$RELEASE_COMMIT" --title "MovieBox $VERSION" \
             --notes-file "$RUNNER_TEMP/release-notes.md" --generate-notes --draft
           gh release edit "v$VERSION" --draft=false --latest
