@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -21,6 +22,7 @@ class PlayerScreen extends StatefulWidget {
   final MovieTitle title;
   final int season, episode;
   final SavedDownload? offline;
+  final bool resume;
   const PlayerScreen({
     super.key,
     required this.api,
@@ -29,6 +31,7 @@ class PlayerScreen extends StatefulWidget {
     required this.season,
     required this.episode,
     this.offline,
+    this.resume = true,
   });
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
@@ -61,6 +64,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
       MediaQuery.sizeOf(context).shortestSide >= 500;
   bool get expandedControls => tvMode || fullscreen;
   Timer? controlsTimer;
+  Timer? cueTimer;
+  String? playbackCue;
+  double volume = 1;
+  bool muted = false;
   Offset? doubleTapPosition;
   String? error;
   int lastSaved = -1;
@@ -82,8 +89,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
       widget.library.taskFor(widget.title, season, episode);
 
   SavedDownload? localDownload() {
-    final saved =
-        widget.library.downloads[viewingKey(widget.title.path, season, episode)];
+    final saved = widget
+        .library
+        .downloads[viewingKey(widget.title.path, season, episode)];
     if (saved == null || !File(saved.path).existsSync()) return null;
     return saved;
   }
@@ -111,16 +119,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 10),
           ),
           onPressed: chooseCaption,
-          child: Text(
-            expanded ? 'Subtitles: $captionLabel' : captionLabel,
-          ),
+          child: Text(expanded ? 'Subtitles: $captionLabel' : captionLabel),
         ),
       ],
     );
   }
 
   String get speedLabel {
-    final text = playbackSpeed.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+    final text = playbackSpeed
+        .toStringAsFixed(2)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
     return 'Speed ${text}x';
   }
 
@@ -227,16 +236,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
         await next.dispose();
         return;
       }
-      final position =
-          at ??
-          Duration(
-            seconds:
-                widget
+      final savedSeconds = widget.resume
+          ? widget
                     .library
                     .history[viewingKey(widget.title.path, season, episode)]
                     ?.positionSeconds ??
-                0,
-          );
+                0
+          : 0;
+      final position = at ?? Duration(seconds: savedSeconds);
       if (position > Duration.zero &&
           position < next.value.duration - const Duration(seconds: 5)) {
         await next.seekTo(position);
@@ -337,7 +344,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     .where(
                       (item) =>
                           item.label == preferred ||
-                          item.language.toLowerCase() == preferred.toLowerCase(),
+                          item.language.toLowerCase() ==
+                              preferred.toLowerCase(),
                     )
                     .firstOrNull ??
                 english;
@@ -589,126 +597,128 @@ class _PlayerScreenState extends State<PlayerScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-            ListTile(
-              title: const Text('Subtitles'),
-              trailing: IconButton(
-                tooltip: 'Close subtitles',
-                onPressed: () => setState(() => captionPanel = false),
-                icon: const Icon(Icons.close),
+              ListTile(
+                title: const Text('Subtitles'),
+                trailing: IconButton(
+                  tooltip: 'Close subtitles',
+                  onPressed: () => setState(() => captionPanel = false),
+                  icon: const Icon(Icons.close),
+                ),
               ),
-            ),
-            const ListTile(title: Text('Position')),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Wrap(
-                spacing: 4,
+              const ListTile(title: Text('Position')),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Wrap(
+                  spacing: 4,
+                  children: [
+                    for (final place in ['top', 'middle', 'bottom'])
+                      ChoiceChip(
+                        label: Text(
+                          place[0].toUpperCase() + place.substring(1),
+                        ),
+                        selected: captionPlace == place,
+                        onSelected: (_) {
+                          setState(() => captionPlace = place);
+                          rememberCaptionStyle();
+                        },
+                      ),
+                  ],
+                ),
+              ),
+              ListTile(
+                title: const Text('Timing'),
+                subtitle: Text(
+                  captionOffset == Duration.zero
+                      ? 'In sync'
+                      : 'Subtitles ${captionOffset.isNegative ? 'earlier' : 'later'} by ${captionOffsetLabel.replaceFirst('-', '')}',
+                ),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  for (final place in ['top', 'middle', 'bottom'])
-                    ChoiceChip(
-                      label: Text(place[0].toUpperCase() + place.substring(1)),
-                      selected: captionPlace == place,
-                      onSelected: (_) {
-                        setState(() => captionPlace = place);
-                        rememberCaptionStyle();
-                      },
-                    ),
+                  IconButton(
+                    tooltip: 'Subtitles earlier',
+                    onPressed: () async {
+                      captionOffset -= const Duration(milliseconds: 500);
+                      await refreshCaptionFile();
+                      if (mounted) setState(() {});
+                    },
+                    icon: const Icon(Icons.remove),
+                  ),
+                  Text(captionOffsetLabel),
+                  IconButton(
+                    tooltip: 'Subtitles later',
+                    onPressed: () async {
+                      captionOffset += const Duration(milliseconds: 500);
+                      await refreshCaptionFile();
+                      if (mounted) setState(() {});
+                    },
+                    icon: const Icon(Icons.add),
+                  ),
                 ],
               ),
-            ),
-            ListTile(
-              title: const Text('Timing'),
-              subtitle: Text(
-                captionOffset == Duration.zero
-                    ? 'In sync'
-                    : 'Subtitles ${captionOffset.isNegative ? 'earlier' : 'later'} by ${captionOffsetLabel.replaceFirst('-', '')}',
-              ),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  tooltip: 'Subtitles earlier',
-                  onPressed: () async {
-                    captionOffset -= const Duration(milliseconds: 500);
-                    await refreshCaptionFile();
-                    if (mounted) setState(() {});
-                  },
-                  icon: const Icon(Icons.remove),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: Text(
+                  'Background',
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
-                Text(captionOffsetLabel),
-                IconButton(
-                  tooltip: 'Subtitles later',
-                  onPressed: () async {
-                    captionOffset += const Duration(milliseconds: 500);
-                    await refreshCaptionFile();
-                    if (mounted) setState(() {});
-                  },
-                  icon: const Icon(Icons.add),
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-              child: Text(
-                'Background',
-                style: Theme.of(context).textTheme.titleMedium,
               ),
-            ),
-            Slider(
-              value: captionOpacity,
-              onChanged: (value) {
-                setState(() => captionOpacity = value);
-                rememberCaptionStyle();
-              },
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text(
-                'Text size',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            Slider(
-              min: 14,
-              max: 32,
-              value: captionSize,
-              onChanged: (value) {
-                setState(() => captionSize = value);
-                rememberCaptionStyle();
-              },
-            ),
-            const ListTile(title: Text('Language')),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: DropdownButton<Object>(
-                isExpanded: true,
-                value: _captionChoice(hasSaved),
-                items: [
-                  const DropdownMenuItem(value: false, child: Text('Off')),
-                  if (hasSaved)
-                    const DropdownMenuItem(
-                      value: true,
-                      child: Text('Saved subtitles'),
-                    ),
-                  for (final caption in captions)
-                    DropdownMenuItem(
-                      value: caption,
-                      child: Text(caption.label),
-                    ),
-                ],
+              Slider(
+                value: captionOpacity,
                 onChanged: (value) {
-                  if (value != null) pickCaption(value);
+                  setState(() => captionOpacity = value);
+                  rememberCaptionStyle();
                 },
               ),
-            ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(12, 4, 12, 0),
-              child: Text(
-                'Position, background, text size, and language are kept for every video. Timing is only for this one.',
-                style: TextStyle(fontSize: 12, color: Color(0xFFBCC8C9)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  'Text size',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
               ),
-            ),
-          ],
+              Slider(
+                min: 14,
+                max: 32,
+                value: captionSize,
+                onChanged: (value) {
+                  setState(() => captionSize = value);
+                  rememberCaptionStyle();
+                },
+              ),
+              const ListTile(title: Text('Language')),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: DropdownButton<Object>(
+                  isExpanded: true,
+                  value: _captionChoice(hasSaved),
+                  items: [
+                    const DropdownMenuItem(value: false, child: Text('Off')),
+                    if (hasSaved)
+                      const DropdownMenuItem(
+                        value: true,
+                        child: Text('Saved subtitles'),
+                      ),
+                    for (final caption in captions)
+                      DropdownMenuItem(
+                        value: caption,
+                        child: Text(caption.label),
+                      ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) pickCaption(value);
+                  },
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(12, 4, 12, 0),
+                child: Text(
+                  'Position, background, text size, and language are kept for every video. Timing is only for this one.',
+                  style: TextStyle(fontSize: 12, color: Color(0xFFBCC8C9)),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -925,7 +935,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void revealControls() {
     controlsTimer?.cancel();
-    if (mounted) setState(() => controlsVisible = true);
+    if (mounted && !controlsVisible) setState(() => controlsVisible = true);
     controlsTimer = Timer(
       Duration(seconds: MediaQuery.sizeOf(context).shortestSide >= 500 ? 8 : 3),
       () {
@@ -955,6 +965,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
     revealControls();
   }
 
+  void showCue(String text) {
+    cueTimer?.cancel();
+    setState(() => playbackCue = text);
+    cueTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) setState(() => playbackCue = null);
+    });
+  }
+
   void seekBy(int seconds) {
     final player = controller;
     if (player == null || !player.value.isInitialized) return;
@@ -966,6 +984,48 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ? player.value.duration
           : target,
     );
+    showCue(seconds < 0 ? '$seconds s' : '+$seconds s');
+    revealControls();
+  }
+
+  void seekFraction(double fraction) {
+    final player = controller;
+    if (player == null || !player.value.isInitialized) return;
+    final target = player.value.duration * fraction.clamp(0, 1);
+    player.seekTo(target);
+    showCue('${(fraction * 100).round()}%');
+    revealControls();
+  }
+
+  void changeVolume(double delta) {
+    final player = controller;
+    if (player == null) return;
+    muted = false;
+    volume = (volume + delta).clamp(0, 1);
+    player.setVolume(volume);
+    showCue(volume == 0 ? 'Muted' : 'Volume ${(volume * 100).round()}%');
+    revealControls();
+  }
+
+  void toggleMute() {
+    final player = controller;
+    if (player == null) return;
+    muted = !muted;
+    player.setVolume(muted ? 0 : volume);
+    showCue(muted ? 'Muted' : 'Volume ${(volume * 100).round()}%');
+    revealControls();
+  }
+
+  void cycleSpeed(int direction) {
+    final index = playbackSpeeds.indexOf(playbackSpeed);
+    final next = (index < 0 ? 2 : index + direction).clamp(
+      0,
+      playbackSpeeds.length - 1,
+    );
+    final speed = playbackSpeeds[next];
+    playbackSpeed = speed;
+    controller?.setPlaybackSpeed(speed);
+    showCue(speedLabel);
     revealControls();
   }
 
@@ -1024,38 +1084,111 @@ class _PlayerScreenState extends State<PlayerScreen> {
           (event is! KeyDownEvent && event is! KeyRepeatEvent)) {
         return KeyEventResult.ignored;
       }
-      if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      final key = event.logicalKey;
+      if (key == LogicalKeyboardKey.arrowLeft ||
+          key == LogicalKeyboardKey.keyJ) {
         seekBy(-10);
         return KeyEventResult.handled;
       }
-      if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      if (key == LogicalKeyboardKey.arrowRight ||
+          key == LogicalKeyboardKey.keyL) {
         seekBy(10);
         return KeyEventResult.handled;
       }
-      if ((event.logicalKey == LogicalKeyboardKey.arrowUp ||
-              event.logicalKey == LogicalKeyboardKey.arrowDown) &&
-          !controlsVisible) {
-        revealControls();
+      if (key == LogicalKeyboardKey.arrowUp) {
+        if (desktopWindow) {
+          changeVolume(0.05);
+        } else if (!controlsVisible) {
+          revealControls();
+        }
         return KeyEventResult.handled;
       }
-      if (event.logicalKey == LogicalKeyboardKey.enter ||
-          event.logicalKey == LogicalKeyboardKey.select ||
-          event.logicalKey == LogicalKeyboardKey.space) {
+      if (key == LogicalKeyboardKey.arrowDown) {
+        if (desktopWindow) {
+          changeVolume(-0.05);
+        } else if (!controlsVisible) {
+          revealControls();
+        }
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.keyM) {
+        if (event is KeyDownEvent) toggleMute();
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.comma) {
+        cycleSpeed(-1);
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.period) {
+        cycleSpeed(1);
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.home) {
+        seekFraction(0);
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.end) {
+        seekFraction(1);
+        return KeyEventResult.handled;
+      }
+      final digits = {
+        LogicalKeyboardKey.digit0: 0.0,
+        LogicalKeyboardKey.digit1: 0.1,
+        LogicalKeyboardKey.digit2: 0.2,
+        LogicalKeyboardKey.digit3: 0.3,
+        LogicalKeyboardKey.digit4: 0.4,
+        LogicalKeyboardKey.digit5: 0.5,
+        LogicalKeyboardKey.digit6: 0.6,
+        LogicalKeyboardKey.digit7: 0.7,
+        LogicalKeyboardKey.digit8: 0.8,
+        LogicalKeyboardKey.digit9: 0.9,
+      };
+      final fraction = digits[key];
+      if (fraction != null) {
+        seekFraction(fraction);
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.enter ||
+          key == LogicalKeyboardKey.select ||
+          key == LogicalKeyboardKey.space ||
+          key == LogicalKeyboardKey.keyK) {
         if (event is KeyDownEvent) togglePlayback();
         return KeyEventResult.handled;
       }
       return KeyEventResult.ignored;
     },
-    child: Container(
-      color: Colors.black,
-      width: double.infinity,
-      constraints: desktopWindow && !fullscreen
-          ? BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.65)
-          : null,
-      child: AspectRatio(
-        aspectRatio: fullscreen
-            ? MediaQuery.sizeOf(context).aspectRatio
-            : 16 / 9,
+    child: Builder(
+      builder: (context) {
+        final initialized = player != null && player.value.isInitialized;
+        final videoRatio = initialized && player.value.aspectRatio > 0
+            ? player.value.aspectRatio
+            : 16 / 9;
+        final stage = AspectRatio(
+          aspectRatio: fullscreen
+              ? MediaQuery.sizeOf(context).aspectRatio
+              : (desktopWindow ? videoRatio : 16 / 9),
+          child: _videoBody(player, panelHeight),
+        );
+        if (!desktopWindow || fullscreen) return stage;
+        return SizedBox(
+          width: double.infinity,
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.62,
+              ),
+              child: stage,
+            ),
+          ),
+        );
+      },
+    ),
+  );
+
+  Widget _videoBody(VideoPlayerController? player, double panelHeight) =>
+      ColoredBox(
+        color: Colors.black,
         child:
             !loading &&
                 ((error != null && player == null) ||
@@ -1117,20 +1250,24 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
                   Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: toggleControls,
-                      onDoubleTapDown: (details) =>
-                          doubleTapPosition = details.localPosition,
-                      onDoubleTap: () {
-                        final x = doubleTapPosition?.dx ?? 0;
-                        final width = MediaQuery.sizeOf(context).width;
-                        if (x < width / 2) {
-                          seekBy(-10);
-                        } else {
-                          seekBy(10);
-                        }
-                      },
+                    child: Builder(
+                      builder: (stageContext) => GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: toggleControls,
+                        onDoubleTapDown: (details) =>
+                            doubleTapPosition = details.localPosition,
+                        onDoubleTap: () {
+                          final x = doubleTapPosition?.dx ?? 0;
+                          final box =
+                              stageContext.findRenderObject() as RenderBox?;
+                          final width = box?.size.width ?? 1;
+                          if (x < width / 2) {
+                            seekBy(-10);
+                          } else {
+                            seekBy(10);
+                          }
+                        },
+                      ),
                     ),
                   ),
                   if (player.value.caption.text.isNotEmpty)
@@ -1179,6 +1316,35 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         ),
                       ),
                     ),
+                  AnimatedSwitcher(
+                    duration: MediaQuery.disableAnimationsOf(context)
+                        ? Duration.zero
+                        : const Duration(milliseconds: 180),
+                    child: playbackCue == null
+                        ? const SizedBox.shrink()
+                        : Center(
+                            key: ValueKey(playbackCue),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: const Color(0xCC101519),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 10,
+                                ),
+                                child: Text(
+                                  playbackCue!,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                  ),
                   if (controlsVisible) ...[
                     Positioned.fill(
                       top: expandedControls ? 56 : 0,
@@ -1296,9 +1462,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ],
               ),
-      ),
-    ),
-  );
+      );
 
   List<(int, int)> get episodeOptions {
     if ((detail?.title ?? widget.title).kind == 'movie') return [];
@@ -1671,6 +1835,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void dispose() {
     controlsTimer?.cancel();
+    cueTimer?.cancel();
     videoFocus.dispose();
     tvControlsFocus.dispose();
     if (desktopWindow && fullscreen) {
@@ -1690,6 +1855,319 @@ class _PlayerScreenState extends State<PlayerScreen> {
     controller?.dispose();
     widget.library.removeListener(refreshDownloads);
     super.dispose();
+  }
+
+  Widget episodeRail(MovieTitle info) {
+    final episodes = episodeOptions.where((item) => item.$1 == season).toList();
+    final seasons = detail?.seasons ?? [];
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFF171D21),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(14, 14, 14, 4),
+            child: Text(
+              'Season',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          if (seasons.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: DropdownButton<int>(
+                isExpanded: true,
+                value: seasons.any((item) => item.number == season)
+                    ? season
+                    : seasons.first.number,
+                items: [
+                  for (final item in seasons)
+                    DropdownMenuItem(
+                      value: item.number,
+                      child: Text('Season ${item.number}'),
+                    ),
+                ],
+                onChanged: (value) {
+                  if (value != null) changeEpisode(value, 1);
+                },
+              ),
+            ),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+              itemCount: episodes.length,
+              itemBuilder: (context, index) {
+                final item = episodes[index];
+                final current = item.$1 == season && item.$2 == episode;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Material(
+                    color: current
+                        ? const Color(0x33F2B86B)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: current
+                          ? null
+                          : () => changeEpisode(item.$1, item.$2),
+                      child: Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: Row(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: SizedBox(
+                                width: 96,
+                                height: 54,
+                                child: (info.backdrop ?? info.poster) == null
+                                    ? const ColoredBox(
+                                        color: Color(0xFF273238),
+                                        child: Icon(Icons.movie, size: 20),
+                                      )
+                                    : CachedNetworkImage(
+                                        imageUrl:
+                                            (info.backdrop ?? info.poster)!,
+                                        fit: BoxFit.cover,
+                                      ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                current
+                                    ? 'Episode ${item.$2}\nPlaying'
+                                    : 'Episode ${item.$2}',
+                                style: TextStyle(
+                                  fontWeight: current
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: current
+                                      ? const Color(0xFFF2B86B)
+                                      : null,
+                                  height: 1.25,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget desktopStage(VideoPlayerController? player, MovieTitle info) {
+    final showRail = info.kind != 'movie' && episodeOptions.isNotEmpty;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final ratio =
+            player != null &&
+                player.value.isInitialized &&
+                player.value.aspectRatio > 0
+            ? player.value.aspectRatio
+            : 16 / 9;
+        final railWidth = showRail ? 312.0 : 0.0;
+        final videoWidth = (constraints.maxWidth - 32 - railWidth).clamp(
+          240.0,
+          constraints.maxWidth,
+        );
+        var videoHeight = videoWidth / ratio;
+        final maxHeight = constraints.maxHeight * 0.68;
+        if (videoHeight > maxHeight) videoHeight = maxHeight;
+        return Column(
+          children: [
+            SizedBox(
+              height: videoHeight + 8,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: ColoredBox(
+                          color: Colors.black,
+                          child: videoSurface(player),
+                        ),
+                      ),
+                    ),
+                    if (showRail) ...[
+                      const SizedBox(width: 12),
+                      SizedBox(width: 300, child: episodeRail(info)),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(child: desktopWatchPanel(info)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget desktopWatchPanel(MovieTitle info) {
+    final poster = info.poster ?? info.backdrop;
+    final seasons = detail?.seasons ?? [];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              width: 112,
+              height: 168,
+              child: poster == null
+                  ? const ColoredBox(
+                      color: Color(0xFF273238),
+                      child: Icon(Icons.movie_outlined),
+                    )
+                  : CachedNetworkImage(imageUrl: poster, fit: BoxFit.cover),
+            ),
+          ),
+          const SizedBox(width: 18),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  info.title,
+                  style: const TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  [
+                    info.kind == 'series' ? 'Series' : 'Movie',
+                    if (info.releaseDate != null &&
+                        info.releaseDate!.length >= 4)
+                      info.releaseDate!.substring(0, 4),
+                    if (info.country != null) info.country!,
+                    if (info.durationSeconds != null &&
+                        info.durationSeconds! > 0)
+                      '${info.durationSeconds! ~/ 60} min',
+                    if (info.rating != null) 'IMDb ${info.rating}',
+                    ...info.genres.take(4),
+                    if (seasons.isNotEmpty)
+                      '${seasons.length} season${seasons.length == 1 ? '' : 's'}',
+                  ].join('   ·   '),
+                  style: const TextStyle(color: Color(0xFFD5DCDE)),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  [
+                    if (season > 0) 'Season $season · Episode $episode',
+                    currentOffline == null
+                        ? '${selected?.resolution ?? ''}p'
+                        : 'Offline ${currentOffline!.resolution}p',
+                    'Subtitles $captionLabel',
+                  ].join('   ·   '),
+                  style: const TextStyle(color: Color(0xFFBCC8C9)),
+                ),
+                if (info.description.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(info.description, style: const TextStyle(height: 1.45)),
+                ],
+                if ((detail?.cast ?? []).isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Cast',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final person in detail!.cast)
+                        Chip(
+                          avatar: person.image == null
+                              ? null
+                              : CircleAvatar(
+                                  backgroundImage: CachedNetworkImageProvider(
+                                    person.image!,
+                                  ),
+                                ),
+                          label: Text(
+                            person.character == null ||
+                                    person.character!.isEmpty
+                                ? person.name
+                                : '${person.name} · ${person.character}',
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 28),
+          SizedBox(
+            width: 260,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                FilledButton.icon(
+                  onPressed: currentOffline != null || downloadTask.active
+                      ? null
+                      : downloadCurrent,
+                  icon: const Icon(Icons.download_outlined),
+                  label: Text(
+                    currentOffline != null ? 'Downloaded' : 'Download',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (controller != null &&
+                    controller!.value.isInitialized &&
+                    currentOffline == null)
+                  OutlinedButton.icon(
+                    onPressed: chooseQuality,
+                    icon: const Icon(Icons.high_quality),
+                    label: Text('Quality ${selected?.resolution ?? ''}p'),
+                  ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    await widget.library.toggleBookmark(
+                      detail?.title ?? widget.title,
+                    );
+                    if (mounted) setState(() {});
+                  },
+                  icon: Icon(
+                    widget.library.bookmarks.containsKey(widget.title.path)
+                        ? Icons.bookmark
+                        : Icons.bookmark_border,
+                  ),
+                  label: Text(
+                    widget.library.bookmarks.containsKey(widget.title.path)
+                        ? 'Bookmarked'
+                        : 'Bookmark',
+                  ),
+                ),
+                DownloadControls(task: downloadTask),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -1726,172 +2204,261 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-          body: Stack(
-            children: [
-              Positioned.fill(
-                child: expandedControls
-                    ? expandedPlayer(player, info)
-                    : SafeArea(
-                  top: false,
-                  child: ListView(
-                    children: [
-                      videoSurface(player),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 12, 18, 4),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: FilledButton.icon(
-                                onPressed:
-                                    currentOffline != null ||
-                                        downloadTask.active
-                                    ? null
-                                    : downloadCurrent,
-                                icon: const Icon(Icons.download_outlined),
-                                label: Text(
-                                  currentOffline != null
-                                      ? 'Downloaded'
-                                      : 'Download video + subtitles',
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              tooltip:
-                                  widget.library.bookmarks.containsKey(
-                                    widget.title.path,
-                                  )
-                                  ? 'Remove bookmark'
-                                  : 'Bookmark',
-                              icon: Icon(
-                                widget.library.bookmarks.containsKey(
-                                      widget.title.path,
-                                    )
-                                    ? Icons.bookmark
-                                    : Icons.bookmark_border,
-                              ),
-                              onPressed: () async {
-                                await widget.library.toggleBookmark(
-                                  detail?.title ?? widget.title,
-                                );
-                                if (mounted) setState(() {});
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(18),
-                        child: DownloadControls(task: downloadTask),
-                      ),
-                      if (player != null && player.value.isInitialized)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
-                          child: Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              if (currentOffline == null)
-                                OutlinedButton.icon(
-                                  onPressed: chooseQuality,
-                                  icon: const Icon(Icons.high_quality),
-                                  label: Text(
-                                    'Quality ${selected?.resolution ?? ''}p',
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 12, 18, 4),
-                        child: Text(
-                          info.title,
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 18),
-                        child: Text(
-                          '${currentOffline == null ? '${selected?.resolution ?? ''}p' : 'Offline · ${currentOffline!.resolution}p'}  ·  Subtitles: $captionLabel',
-                          style: const TextStyle(color: Color(0xFFBCC8C9)),
-                        ),
-                      ),
-                      if (season > 0)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(18, 4, 18, 2),
-                          child: Text(
-                            'Season $season · Episode $episode',
-                            style: const TextStyle(color: Color(0xFFF2B86B)),
-                          ),
-                        ),
-                      if (info.description.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
-                          child: Text(info.description),
-                        ),
-                      if (info.kind != 'movie' &&
-                          (seasons.isNotEmpty || savedEpisodes.isNotEmpty)) ...[
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(18, 20, 18, 8),
-                          child: Text(
-                            'Episodes',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                        ),
-                        if (seasons.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 18),
-                            child: DropdownButton<int>(
-                              value:
-                                  seasons.any((item) => item.number == season)
-                                  ? season
-                                  : seasons.first.number,
-                              items: [
-                                for (final item in seasons)
-                                  DropdownMenuItem(
-                                    value: item.number,
-                                    child: Text('Season ${item.number}'),
-                                  ),
-                              ],
-                              onChanged: (value) {
-                                if (value != null) changeEpisode(value, 1);
-                              },
-                            ),
-                          ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 18),
-                          child: mobileEpisodeSelector(),
-                        ),
-                      ],
-                      const SizedBox(height: 28),
-                    ],
-                  ),
-                ),
-              ),
-              if (captionPanel) ...[
+          body: MouseRegion(
+            onHover: desktopWindow ? (_) => revealControls() : null,
+            onEnter: desktopWindow ? (_) => revealControls() : null,
+            child: Stack(
+              children: [
                 Positioned.fill(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => setState(() => captionPanel = false),
+                  child: expandedControls
+                      ? expandedPlayer(player, info)
+                      : SafeArea(
+                          top: false,
+                          child: desktopWindow
+                              ? desktopStage(player, info)
+                              : ListView(
+                                  children: [
+                                    videoSurface(player),
+                                    Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        18,
+                                        12,
+                                        18,
+                                        4,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          if (desktopWindow)
+                                            FilledButton.icon(
+                                              onPressed:
+                                                  currentOffline != null ||
+                                                      downloadTask.active
+                                                  ? null
+                                                  : downloadCurrent,
+                                              icon: const Icon(
+                                                Icons.download_outlined,
+                                              ),
+                                              label: Text(
+                                                currentOffline != null
+                                                    ? 'Downloaded'
+                                                    : 'Download video + subtitles',
+                                              ),
+                                            )
+                                          else
+                                            Expanded(
+                                              child: FilledButton.icon(
+                                                onPressed:
+                                                    currentOffline != null ||
+                                                        downloadTask.active
+                                                    ? null
+                                                    : downloadCurrent,
+                                                icon: const Icon(
+                                                  Icons.download_outlined,
+                                                ),
+                                                label: Text(
+                                                  currentOffline != null
+                                                      ? 'Downloaded'
+                                                      : 'Download video + subtitles',
+                                                ),
+                                              ),
+                                            ),
+                                          IconButton(
+                                            tooltip:
+                                                widget.library.bookmarks
+                                                    .containsKey(
+                                                      widget.title.path,
+                                                    )
+                                                ? 'Remove bookmark'
+                                                : 'Bookmark',
+                                            icon: Icon(
+                                              widget.library.bookmarks
+                                                      .containsKey(
+                                                        widget.title.path,
+                                                      )
+                                                  ? Icons.bookmark
+                                                  : Icons.bookmark_border,
+                                            ),
+                                            onPressed: () async {
+                                              await widget.library
+                                                  .toggleBookmark(
+                                                    detail?.title ??
+                                                        widget.title,
+                                                  );
+                                              if (mounted) setState(() {});
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (!desktopWindow)
+                                      Padding(
+                                        padding: const EdgeInsets.all(18),
+                                        child: DownloadControls(
+                                          task: downloadTask,
+                                        ),
+                                      ),
+                                    if (!desktopWindow &&
+                                        player != null &&
+                                        player.value.isInitialized)
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          18,
+                                          10,
+                                          18,
+                                          0,
+                                        ),
+                                        child: Wrap(
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          children: [
+                                            if (currentOffline == null)
+                                              OutlinedButton.icon(
+                                                onPressed: chooseQuality,
+                                                icon: const Icon(
+                                                  Icons.high_quality,
+                                                ),
+                                                label: Text(
+                                                  'Quality ${selected?.resolution ?? ''}p',
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                    if (!desktopWindow)
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          18,
+                                          12,
+                                          18,
+                                          4,
+                                        ),
+                                        child: Text(
+                                          info.title,
+                                          style: const TextStyle(
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    if (!desktopWindow)
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 18,
+                                        ),
+                                        child: Text(
+                                          '${currentOffline == null ? '${selected?.resolution ?? ''}p' : 'Offline · ${currentOffline!.resolution}p'}  ·  Subtitles: $captionLabel',
+                                          style: const TextStyle(
+                                            color: Color(0xFFBCC8C9),
+                                          ),
+                                        ),
+                                      ),
+                                    if (!desktopWindow && season > 0)
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          18,
+                                          4,
+                                          18,
+                                          2,
+                                        ),
+                                        child: Text(
+                                          'Season $season · Episode $episode',
+                                          style: const TextStyle(
+                                            color: Color(0xFFF2B86B),
+                                          ),
+                                        ),
+                                      ),
+                                    if (!desktopWindow &&
+                                        info.description.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          18,
+                                          12,
+                                          18,
+                                          8,
+                                        ),
+                                        child: Text(info.description),
+                                      ),
+                                    if (!desktopWindow &&
+                                        info.kind != 'movie' &&
+                                        (seasons.isNotEmpty ||
+                                            savedEpisodes.isNotEmpty)) ...[
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          18,
+                                          20,
+                                          18,
+                                          8,
+                                        ),
+                                        child: Text(
+                                          'Episodes',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleLarge,
+                                        ),
+                                      ),
+                                      if (seasons.isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 18,
+                                          ),
+                                          child: DropdownButton<int>(
+                                            value:
+                                                seasons.any(
+                                                  (item) =>
+                                                      item.number == season,
+                                                )
+                                                ? season
+                                                : seasons.first.number,
+                                            items: [
+                                              for (final item in seasons)
+                                                DropdownMenuItem(
+                                                  value: item.number,
+                                                  child: Text(
+                                                    'Season ${item.number}',
+                                                  ),
+                                                ),
+                                            ],
+                                            onChanged: (value) {
+                                              if (value != null)
+                                                changeEpisode(value, 1);
+                                            },
+                                          ),
+                                        ),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 18,
+                                        ),
+                                        child: mobileEpisodeSelector(),
+                                      ),
+                                    ],
+                                    const SizedBox(height: 28),
+                                  ],
+                                ),
+                        ),
+                ),
+                if (captionPanel) ...[
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => setState(() => captionPanel = false),
+                    ),
                   ),
-                ),
-                Positioned(
-                  top: 0,
-                  right: 0,
-                  bottom: 0,
-                  width: () {
-                    final width = MediaQuery.sizeOf(context).width;
-                    final preferred = width * 0.3;
-                    return preferred < 220
-                        ? (width < 220 ? width : 220.0)
-                        : preferred;
-                  }(),
-                  child: captionSidePanel(),
-                ),
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                    width: () {
+                      final width = MediaQuery.sizeOf(context).width;
+                      final preferred = width * 0.3;
+                      return preferred < 220
+                          ? (width < 220 ? width : 220.0)
+                          : preferred;
+                    }(),
+                    child: captionSidePanel(),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

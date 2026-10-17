@@ -141,6 +141,15 @@ class MovieLibrary extends ChangeNotifier {
     _notify();
   }
 
+  Future<void> removeHistory(String key) async {
+    if (history.remove(key) == null) return;
+    await prefs.setString(
+      'history',
+      jsonEncode(history.values.map((e) => e.toJson()).toList()),
+    );
+    _notify();
+  }
+
   Future<void> toggleBookmark(MovieTitle title) async {
     if (bookmarks.containsKey(title.path)) {
       bookmarks.remove(title.path);

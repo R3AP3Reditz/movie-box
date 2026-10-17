@@ -1,6 +1,7 @@
 class MovieTitle {
   final String id, path, kind, title, description;
-  final String? poster, backdrop, rating;
+  final String? poster, backdrop, rating, releaseDate, country;
+  final int? durationSeconds;
   final List<String> genres;
   final bool available;
 
@@ -13,6 +14,11 @@ class MovieTitle {
       poster = value['poster_url'] as String?,
       backdrop = value['backdrop_url'] as String?,
       rating = value['rating']?.toString(),
+      releaseDate = value['release_date'] as String?,
+      country = value['country'] as String?,
+      durationSeconds = value['duration_seconds'] is num
+          ? (value['duration_seconds'] as num).round()
+          : null,
       genres = (value['genres'] as List? ?? []).map((e) => '$e').toList(),
       available = value['has_resource'] == true;
 
@@ -25,6 +31,9 @@ class MovieTitle {
     'poster_url': poster,
     'backdrop_url': backdrop,
     'rating': rating,
+    'release_date': releaseDate,
+    'country': country,
+    'duration_seconds': durationSeconds,
     'genres': genres,
     'has_resource': available,
   };
@@ -62,12 +71,28 @@ class MovieHome {
           .toList();
 }
 
+class MoviePerson {
+  final String name;
+  final String? character;
+  final String? image;
+  MoviePerson.fromJson(Map<String, dynamic> value)
+    : name = '${value['name'] ?? ''}',
+      character = value['character'] as String?,
+      image = value['image_url'] as String?;
+}
+
 class MovieDetail {
   final MovieTitle title;
   final List<MovieSeason> seasons;
   final List<MovieTitle> dubs;
+  final List<MoviePerson> cast;
   MovieDetail.fromJson(Map<String, dynamic> data)
     : title = MovieTitle.fromJson(data['title'] as Map<String, dynamic>),
+      cast = (data['cast'] as List? ?? [])
+          .whereType<Map>()
+          .map((e) => MoviePerson.fromJson(Map<String, dynamic>.from(e)))
+          .where((person) => person.name.isNotEmpty)
+          .toList(),
       seasons = (data['seasons'] as List? ?? [])
           .map((e) => MovieSeason.fromJson(e as Map<String, dynamic>))
           .where(

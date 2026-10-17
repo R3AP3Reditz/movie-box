@@ -42,6 +42,10 @@ class DownloadControls extends StatelessWidget {
           if (task.active)
             LinearProgressIndicator(
               value: task.paused ? (progress ?? 0) : progress,
+              minHeight: 6,
+              borderRadius: BorderRadius.circular(99),
+              color: const Color(0xFFF2B86B),
+              backgroundColor: const Color(0xFF2A343A),
               semanticsLabel: '${task.title.title} download progress',
             ),
           const SizedBox(height: 6),

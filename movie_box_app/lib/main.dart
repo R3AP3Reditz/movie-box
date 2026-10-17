@@ -20,6 +20,93 @@ Future<void> main() async {
   unawaited(library.backfillThumbnails());
 }
 
+/// Fade and a short slide. Desktop video textures cannot be snapshotted,
+/// so this builder does not use a zoom snapshot.
+class MovieBoxPageTransitions extends PageTransitionsBuilder {
+  const MovieBoxPageTransitions();
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 420);
+
+  @override
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 340);
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    final incoming = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    final outgoing = CurvedAnimation(
+      parent: secondaryAnimation,
+      curve: Curves.easeOutCubic,
+    );
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: Offset.zero,
+        end: const Offset(-0.08, 0),
+      ).animate(outgoing),
+      child: FadeTransition(
+        opacity: Tween<double>(begin: 1, end: 0.55).animate(outgoing),
+        child: FadeTransition(
+          opacity: incoming,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0.14, 0),
+              end: Offset.zero,
+            ).animate(incoming),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TabMotion extends StatelessWidget {
+  final AnimationController motion;
+  final int from;
+  final int to;
+  final Widget child;
+
+  const _TabMotion({
+    required this.motion,
+    required this.from,
+    required this.to,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) return child;
+    return AnimatedBuilder(
+      animation: motion,
+      child: child,
+      builder: (context, child) {
+        final t = Curves.easeOutCubic.transform(motion.value);
+        final direction = to >= from ? 1.0 : -1.0;
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(
+            offset: Offset((1 - t) * 84 * direction, (1 - t) * 10),
+            child: Transform.scale(
+              scale: 0.96 + 0.04 * t,
+              child: child,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class MovieBoxApp extends StatefulWidget {
   final MovieLibrary library;
   const MovieBoxApp({super.key, required this.library});
@@ -27,12 +114,15 @@ class MovieBoxApp extends StatefulWidget {
   State<MovieBoxApp> createState() => _MovieBoxAppState();
 }
 
-class _MovieBoxAppState extends State<MovieBoxApp> with WidgetsBindingObserver {
+class _MovieBoxAppState extends State<MovieBoxApp>
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   late MovieApi api = MovieApi(
     baseUrl: widget.library.server,
     token: widget.library.token,
   );
   int tab = 0;
+  int tabFrom = 0;
+  late final AnimationController tabMotion;
   final messengerKey = GlobalKey<ScaffoldMessengerState>();
 
   Future<void> restoreDownloads() async {
@@ -59,6 +149,11 @@ class _MovieBoxAppState extends State<MovieBoxApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    tabMotion = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+      value: 1,
+    );
     unawaited(restoreDownloads());
   }
 
@@ -82,12 +177,19 @@ class _MovieBoxAppState extends State<MovieBoxApp> with WidgetsBindingObserver {
 
   void selectTab(int index) {
     if (tab == index) return;
+    tabFrom = tab;
     setState(() => tab = index);
+    if (MediaQuery.disableAnimationsOf(context)) {
+      tabMotion.value = 1;
+    } else {
+      tabMotion.forward(from: 0);
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    tabMotion.dispose();
     api.close();
     super.dispose();
   }
@@ -97,6 +199,18 @@ class _MovieBoxAppState extends State<MovieBoxApp> with WidgetsBindingObserver {
     const background = Color(0xFF101519);
     const surface = Color(0xFF1D2529);
     const accent = Color(0xFFF2B86B);
+    final focusSide = WidgetStateProperty.resolveWith<BorderSide?>((states) {
+      if (states.contains(WidgetState.focused)) {
+        return const BorderSide(color: Color(0xFFFFE0A8), width: 2.5);
+      }
+      return BorderSide.none;
+    });
+    final focusFill = WidgetStateProperty.resolveWith<Color?>((states) {
+      if (states.contains(WidgetState.focused)) {
+        return const Color(0x66F2B86B);
+      }
+      return null;
+    });
     return MaterialApp(
       scaffoldMessengerKey: messengerKey,
       title: 'MovieBox',
@@ -110,19 +224,53 @@ class _MovieBoxAppState extends State<MovieBoxApp> with WidgetsBindingObserver {
           builders: {
             ...const PageTransitionsTheme().builders,
             // Desktop video textures cannot be snapshotted during navigation.
-            TargetPlatform.linux: const ZoomPageTransitionsBuilder(
-              allowSnapshotting: false,
-            ),
-            TargetPlatform.windows: const ZoomPageTransitionsBuilder(
-              allowSnapshotting: false,
-            ),
+            TargetPlatform.linux: const MovieBoxPageTransitions(),
+            TargetPlatform.windows: const MovieBoxPageTransitions(),
+            TargetPlatform.macOS: const MovieBoxPageTransitions(),
           },
         ),
+        focusColor: const Color(0xAAF2B86B),
+        hoverColor: const Color(0x22F2B86B),
         colorScheme: const ColorScheme.dark(
           primary: accent,
           secondary: accent,
           surface: surface,
           onSurface: Color(0xFFF0F1ED),
+        ),
+        iconButtonTheme: IconButtonThemeData(
+          style: IconButton.styleFrom().copyWith(
+            side: focusSide,
+            overlayColor: focusFill,
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom().copyWith(
+            side: focusSide,
+            overlayColor: focusFill,
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom().copyWith(
+            side: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.focused)) {
+                return const BorderSide(color: Color(0xFFFFE0A8), width: 2.5);
+              }
+              return const BorderSide(color: Color(0xFF5C676C));
+            }),
+            overlayColor: focusFill,
+          ),
+        ),
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom().copyWith(
+            side: focusSide,
+            overlayColor: focusFill,
+          ),
+        ),
+        listTileTheme: const ListTileThemeData(
+          selectedTileColor: Color(0x33F2B86B),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(10)),
+          ),
         ),
         appBarTheme: const AppBarTheme(
           backgroundColor: background,
@@ -145,38 +293,43 @@ class _MovieBoxAppState extends State<MovieBoxApp> with WidgetsBindingObserver {
         builder: (context, constraints) {
           final wide = constraints.maxWidth >= wideLayoutBreakpoint;
           final extended = constraints.maxWidth >= 1200;
-          final pages = IndexedStack(
-            index: tab,
-            children: [
-              TickerMode(
-                enabled: tab == 0,
-                child: HomeScreen(api: api, library: widget.library),
-              ),
-              TickerMode(
-                enabled: tab == 1,
-                child: BookmarksScreen(api: api, library: widget.library),
-              ),
-              TickerMode(
-                enabled: tab == 2,
-                child: SearchScreen(
-                  api: api,
-                  library: widget.library,
-                  active: tab == 2,
+          final pages = _TabMotion(
+            motion: tabMotion,
+            from: tabFrom,
+            to: tab,
+            child: IndexedStack(
+              index: tab,
+              children: [
+                TickerMode(
+                  enabled: tab == 0,
+                  child: HomeScreen(api: api, library: widget.library),
                 ),
-              ),
-              TickerMode(
-                enabled: tab == 3,
-                child: LibraryScreen(api: api, library: widget.library),
-              ),
-              TickerMode(
-                enabled: tab == 4,
-                child: SettingsScreen(
-                  api: api,
-                  library: widget.library,
-                  onSaved: updated,
+                TickerMode(
+                  enabled: tab == 1,
+                  child: BookmarksScreen(api: api, library: widget.library),
                 ),
-              ),
-            ],
+                TickerMode(
+                  enabled: tab == 2,
+                  child: SearchScreen(
+                    api: api,
+                    library: widget.library,
+                    active: tab == 2,
+                  ),
+                ),
+                TickerMode(
+                  enabled: tab == 3,
+                  child: LibraryScreen(api: api, library: widget.library),
+                ),
+                TickerMode(
+                  enabled: tab == 4,
+                  child: SettingsScreen(
+                    api: api,
+                    library: widget.library,
+                    onSaved: updated,
+                  ),
+                ),
+              ],
+            ),
           );
           return CallbackShortcuts(
             bindings: {
@@ -203,72 +356,24 @@ class _MovieBoxAppState extends State<MovieBoxApp> with WidgetsBindingObserver {
               child: Scaffold(
                 body: SafeArea(
                   child: wide
-                      ? Row(
+                      ? Stack(
                           children: [
-                            NavigationRail(
-                              selectedIndex: tab,
-                              onDestinationSelected: selectTab,
-                              extended: extended,
-                              scrollable: true,
-                              leading: extended
-                                  ? const Padding(
-                                      padding: EdgeInsets.fromLTRB(
-                                        14,
-                                        18,
-                                        14,
-                                        22,
-                                      ),
-                                      child: Text(
-                                        'MovieBox',
-                                        style: TextStyle(
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.bold,
-                                          color: Color(0xFFF2B86B),
-                                        ),
-                                      ),
-                                    )
-                                  : const Padding(
-                                      padding: EdgeInsets.only(
-                                        top: 12,
-                                        bottom: 8,
-                                      ),
-                                      child: Icon(
-                                        Icons.movie_filter_outlined,
-                                        color: Color(0xFFF2B86B),
-                                      ),
-                                    ),
-                              labelType: extended
-                                  ? NavigationRailLabelType.none
-                                  : NavigationRailLabelType.all,
-                              destinations: const [
-                                NavigationRailDestination(
-                                  icon: Icon(Icons.home_outlined),
-                                  selectedIcon: Icon(Icons.home),
-                                  label: Text('Home'),
-                                ),
-                                NavigationRailDestination(
-                                  icon: Icon(Icons.bookmark_border),
-                                  selectedIcon: Icon(Icons.bookmark),
-                                  label: Text('Library'),
-                                ),
-                                NavigationRailDestination(
-                                  icon: Icon(Icons.search),
-                                  label: Text('Search'),
-                                ),
-                                NavigationRailDestination(
-                                  icon: Icon(Icons.download_outlined),
-                                  selectedIcon: Icon(Icons.download),
-                                  label: Text('Downloads'),
-                                ),
-                                NavigationRailDestination(
-                                  icon: Icon(Icons.settings_outlined),
-                                  selectedIcon: Icon(Icons.settings),
-                                  label: Text('Settings'),
-                                ),
-                              ],
+                            Padding(
+                              padding: const EdgeInsets.only(left: 78),
+                              child: pages,
                             ),
-                            const VerticalDivider(width: 1),
-                            Expanded(child: pages),
+                            Positioned(
+                              left: 14,
+                              top: 0,
+                              bottom: 0,
+                              child: Center(
+                                child: DesktopSidebar(
+                                  selected: tab,
+                                  extended: extended,
+                                  onSelected: selectTab,
+                                ),
+                              ),
+                            ),
                           ],
                         )
                       : pages,

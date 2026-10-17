@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:movie_box_app/api.dart';
+import 'package:movie_box_app/desktop.dart';
 import 'package:movie_box_app/library.dart';
 import 'package:movie_box_app/loading.dart';
 import 'package:movie_box_app/main.dart';
@@ -740,7 +741,7 @@ void main() {
           await tester.pumpWidget(MovieBoxApp(library: library));
           _expectLoader(tester, 'Loading your home');
           final homeState = tester.state(find.byType(HomeScreen));
-          final navigation = find.byType(wide ? NavigationRail : NavigationBar);
+          final navigation = find.byType(wide ? DesktopSidebar : NavigationBar);
           for (final index in [1, 2, 3, 4, 0]) {
             final label = [
               'Home',
@@ -750,7 +751,10 @@ void main() {
               'Settings',
             ][index];
             await tester.tap(
-              find.descendant(of: navigation, matching: find.text(label)),
+              find.descendant(
+                of: navigation,
+                matching: wide ? find.byTooltip(label) : find.text(label),
+              ),
             );
             await _flush(tester);
             if (index != 0) await tester.pumpAndSettle();

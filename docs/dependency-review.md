@@ -60,6 +60,10 @@ This establishes notice-file presence and recognizable license text, not a compl
 
 Linux support adds `video_player_media_kit` 2.0.0 and `media_kit_libs_linux` 1.2.1, plus their resolved transitive dependencies. The historical counts above predate this addition. Linux playback also dynamically uses the system libmpv and its codec libraries; the Linux plugin builds mimalloc. Inventory their actual licenses and applicable source/redistribution obligations before distributing Linux binaries. The Dart package notices alone do not cover all native-library obligations, and this addition is not a completed compatibility audit.
 
+## Windows additions
+
+Windows support adds `media_kit_libs_windows_video` 1.0.11 alongside the same `video_player_media_kit` plugin, and `background_downloader` runs its pure-Dart desktop implementation rather than the Android foreground service. The historical counts above predate this addition. The Windows media-kit package redistributes a prebuilt libmpv and its codec libraries as native binaries, so the Dart notices in the generated registry do not cover the shipped libraries; inventory their licenses and source/redistribution obligations before distributing Windows binaries. This addition is not a completed compatibility audit.
+
 ## Still required before distribution
 
 - Inventory the actual release build's Flutter SDK, transitive Dart packages, native Android artifacts, fonts, and artwork; inspect their licenses and preserve required notices.

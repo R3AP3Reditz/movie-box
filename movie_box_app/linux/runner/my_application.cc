@@ -68,8 +68,9 @@ static void my_application_activate(GApplication* application) {
 
   gtk_window_set_default_size(window, 1360, 860);
 
-  // Below this the shell switches to the phone bottom-bar layout, so keep the
-  // window wide enough for the desktop one.
+  // Request a desktop-sized minimum: below this width the shell switches to the
+  // phone bottom-bar layout. GTK 3 cannot enforce this on Wayland, where the
+  // compositor decides the window size, so it is a hint rather than a guarantee.
   GdkGeometry geometry = {};
   geometry.min_width = 900;
   geometry.min_height = 620;

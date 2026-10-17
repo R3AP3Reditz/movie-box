@@ -121,7 +121,7 @@ class DownloadArtwork extends StatelessWidget {
   }
 }
 
-class Poster extends StatelessWidget {
+class Poster extends StatefulWidget {
   final MovieTitle title;
   final VoidCallback onTap;
   final double width;
@@ -132,33 +132,60 @@ class Poster extends StatelessWidget {
     this.width = 130,
   });
   @override
-  Widget build(BuildContext context) => SizedBox(
-    width: width,
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      focusColor: const Color(0x66F2B86B),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ClipRRect(
+  State<Poster> createState() => _PosterState();
+}
+
+class _PosterState extends State<Poster> {
+  bool hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = widget.title;
+    final width = widget.width;
+    return MouseRegion(
+      onEnter: (_) {
+        if (isDesktopWindow) setState(() => hover = true);
+      },
+      onExit: (_) {
+        if (hover) setState(() => hover = false);
+      },
+      child: AnimatedScale(
+        scale: hover ? 1.045 : 1,
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        child: SizedBox(
+          width: width,
+          child: InkWell(
+            onTap: widget.onTap,
             borderRadius: BorderRadius.circular(12),
-            child: AspectRatio(
-              aspectRatio: 2 / 3,
-              child: Artwork(url: title.poster),
+            focusColor: const Color(0x66F2B86B),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: AspectRatio(
+                    aspectRatio: 2 / 3,
+                    child: Artwork(url: title.poster),
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  title.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 7),
-          Text(
-            title.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-          ),
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class TitleGrid extends StatelessWidget {
@@ -167,19 +194,26 @@ class TitleGrid extends StatelessWidget {
   const TitleGrid({super.key, required this.items, required this.onTap});
   @override
   Widget build(BuildContext context) {
-    final columns = gridColumns(context);
     return SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      sliver: SliverGrid.builder(
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: columns,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 16,
-          childAspectRatio: 0.51,
-        ),
-        itemCount: items.length,
-        itemBuilder: (_, index) =>
-            Poster(title: items[index], onTap: () => onTap(items[index])),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      sliver: SliverLayoutBuilder(
+        builder: (context, constraints) {
+          final columns = gridColumns(
+            context,
+            width: constraints.crossAxisExtent,
+          );
+          return SliverGrid.builder(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              crossAxisSpacing: 14,
+              mainAxisSpacing: 18,
+              childAspectRatio: 0.56,
+            ),
+            itemCount: items.length,
+            itemBuilder: (_, index) =>
+                Poster(title: items[index], onTap: () => onTap(items[index])),
+          );
+        },
       ),
     );
   }
@@ -206,11 +240,12 @@ class ScreenHeader extends StatelessWidget {
             icon: const Icon(Icons.refresh),
             onPressed: onRefresh,
           ),
-        IconButton(
-          tooltip: 'Settings',
-          icon: const Icon(Icons.settings_outlined),
-          onPressed: () => Navigator.pushNamed(context, '/settings'),
-        ),
+        if (MediaQuery.sizeOf(context).width < wideLayoutBreakpoint)
+          IconButton(
+            tooltip: 'Settings',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => Navigator.pushNamed(context, '/settings'),
+          ),
       ],
     ),
   );
@@ -575,16 +610,35 @@ class ContinueRow extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: SizedBox(
-                          height: thumbHeight,
-                          width: width,
-                          child: DownloadArtwork(
-                            title: entry.title,
-                            download: library.downloads[entry.key],
+                      Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: SizedBox(
+                              height: thumbHeight,
+                              width: width,
+                              child: DownloadArtwork(
+                                title: entry.title,
+                                download: library.downloads[entry.key],
+                              ),
+                            ),
                           ),
-                        ),
+                          Positioned(
+                            top: 4,
+                            right: 4,
+                            child: Material(
+                              color: const Color(0xCC101519),
+                              shape: const CircleBorder(),
+                              child: IconButton(
+                                tooltip: 'Remove from continue watching',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () =>
+                                    library.removeHistory(entry.key),
+                                icon: const Icon(Icons.close, size: 16),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       LinearProgressIndicator(
@@ -940,7 +994,7 @@ class _SearchScreenState extends State<SearchScreen> {
           children: [
             const ScreenHeader('Search'),
             ContentFrame(
-              maxWidth: 760,
+              maxWidth: 1120,
               alignment: Alignment.topLeft,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -991,7 +1045,7 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
             if (hints.isNotEmpty)
               ContentFrame(
-                maxWidth: 760,
+                maxWidth: 1120,
                 alignment: Alignment.topLeft,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1166,6 +1220,7 @@ class _DetailScreenState extends State<DetailScreen> {
               season: season,
               episode: episode,
               offline: offline,
+              resume: false,
             ),
           ),
         )
@@ -1276,7 +1331,13 @@ class _DetailScreenState extends State<DetailScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Title details')),
+    appBar: AppBar(
+      title: Text(
+        MediaQuery.sizeOf(context).width >= splitLayoutBreakpoint
+            ? 'Movie Box'
+            : 'Title details',
+      ),
+    ),
     body: SafeArea(
       top: false,
       child: FutureBuilder<MovieDetail>(
@@ -1308,13 +1369,158 @@ class _DetailScreenState extends State<DetailScreen> {
               MediaQuery.sizeOf(context).width >= splitLayoutBreakpoint;
           return ListView(
             children: [
-              SizedBox(
-                height: wide ? 340 : 230,
-                child: Artwork(
-                  url: title.backdrop ?? title.poster,
-                  width: wide ? 1600 : 1080,
+              if (wide)
+                ContentFrame(
+                  maxWidth: 1140,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: SizedBox(
+                        height: 380,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Artwork(
+                              url: title.backdrop ?? title.poster,
+                              width: 1600,
+                            ),
+                            const DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0x22000000),
+                                    Color(0xF0101519),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.all(22),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: SizedBox(
+                                      width: 150,
+                                      child: AspectRatio(
+                                        aspectRatio: 2 / 3,
+                                        child: Artwork(
+                                          url: title.poster ?? title.backdrop,
+                                          width: 420,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 22),
+                                  Expanded(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          title.title,
+                                          style: const TextStyle(
+                                            fontSize: 34,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          [
+                                            title.kind.toUpperCase(),
+                                            if (title.rating != null)
+                                              'IMDb ${title.rating}',
+                                            ...title.genres.take(3),
+                                          ].join('  ·  '),
+                                          style: const TextStyle(
+                                            color: Color(0xFFD5DCDE),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 14),
+                                        Row(
+                                          children: [
+                                            FilledButton.icon(
+                                              onPressed:
+                                                  title.available &&
+                                                      (detail.seasons.isEmpty ||
+                                                          episode > 0)
+                                                  ? () => play(
+                                                      title,
+                                                      offline:
+                                                          saved != null &&
+                                                              File(saved.path)
+                                                                  .existsSync()
+                                                          ? saved
+                                                          : null,
+                                                    )
+                                                  : null,
+                                              icon: const Icon(
+                                                Icons.play_arrow,
+                                              ),
+                                              label: const Text('Play'),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            OutlinedButton.icon(
+                                              onPressed:
+                                                  busy ||
+                                                      task.active ||
+                                                      !title.available ||
+                                                      (detail
+                                                              .seasons
+                                                              .isNotEmpty &&
+                                                          episode == 0)
+                                                  ? null
+                                                  : () => download(title),
+                                              icon: const Icon(
+                                                Icons.download_outlined,
+                                              ),
+                                              label: Text(
+                                                downloadLabel ?? 'Download',
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            IconButton(
+                                              tooltip:
+                                                  widget.library.bookmarks
+                                                      .containsKey(title.path)
+                                                  ? 'Remove bookmark'
+                                                  : 'Bookmark show',
+                                              onPressed: () => widget.library
+                                                  .toggleBookmark(title),
+                                              icon: Icon(
+                                                widget.library.bookmarks
+                                                        .containsKey(title.path)
+                                                    ? Icons.bookmark
+                                                    : Icons.bookmark_border,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                SizedBox(
+                  height: 230,
+                  child: Artwork(
+                    url: title.backdrop ?? title.poster,
+                    width: 1080,
+                  ),
                 ),
-              ),
               ContentFrame(
                 maxWidth: 1140,
                 child: Padding(
@@ -1322,113 +1528,125 @@ class _DetailScreenState extends State<DetailScreen> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (wide) ...[
-                        SizedBox(
-                          width: 240,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
-                            child: AspectRatio(
-                              aspectRatio: 2 / 3,
-                              child: Artwork(
-                                url: title.poster ?? title.backdrop,
-                                width: 480,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 28),
-                      ],
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              title.title,
-                              style: const TextStyle(
-                                fontSize: 29,
-                                fontWeight: FontWeight.bold,
+                            if (wide)
+                              Text(
+                                title.description.isEmpty
+                                    ? 'No synopsis available.'
+                                    : title.description,
+                              )
+                            else
+                              Text(
+                                title.title,
+                                style: const TextStyle(
+                                  fontSize: 29,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              [
-                                title.kind.toUpperCase(),
-                                if (title.rating != null)
-                                  'IMDb ${title.rating}',
-                                ...title.genres.take(3),
-                              ].join('  ·  '),
-                              style: const TextStyle(color: Color(0xFFBCC8C9)),
-                            ),
-                            const SizedBox(height: 14),
-                            Text(
-                              title.description.isEmpty
-                                  ? 'No synopsis available.'
-                                  : title.description,
-                            ),
-                            const SizedBox(height: 20),
-                            ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth: wide ? 320 : double.infinity,
+                            if (!wide) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                [
+                                  title.kind.toUpperCase(),
+                                  if (title.rating != null)
+                                    'IMDb ${title.rating}',
+                                  ...title.genres.take(3),
+                                ].join('  ·  '),
+                                style: const TextStyle(
+                                  color: Color(0xFFBCC8C9),
+                                ),
                               ),
-                              child: FilledButton.icon(
-                                onPressed:
-                                    title.available &&
-                                        (detail.seasons.isEmpty || episode > 0)
-                                    ? () => play(
-                                        title,
-                                        offline:
-                                            saved != null &&
-                                                File(saved.path).existsSync()
-                                            ? saved
-                                            : null,
+                              const SizedBox(height: 14),
+                              Text(
+                                title.description.isEmpty
+                                    ? 'No synopsis available.'
+                                    : title.description,
+                              ),
+                              const SizedBox(height: 20),
+                              ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: wide ? 320 : double.infinity,
+                                ),
+                                child: FilledButton.icon(
+                                  onPressed:
+                                      title.available &&
+                                          (detail.seasons.isEmpty ||
+                                              episode > 0)
+                                      ? () => play(
+                                          title,
+                                          offline:
+                                              saved != null &&
+                                                  File(saved.path).existsSync()
+                                              ? saved
+                                              : null,
+                                        )
+                                      : null,
+                                  icon: const Icon(Icons.play_arrow),
+                                  label: const Text('Play'),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              OutlinedButton.icon(
+                                onPressed: () =>
+                                    widget.library.toggleBookmark(title),
+                                icon: Icon(
+                                  widget.library.bookmarks.containsKey(
+                                        title.path,
                                       )
-                                    : null,
-                                icon: const Icon(Icons.play_arrow),
+                                      ? Icons.bookmark
+                                      : Icons.bookmark_border,
+                                ),
                                 label: Text(
-                                  watch == null
-                                      ? 'Play'
-                                      : 'Continue at ${Duration(seconds: watch.positionSeconds).inMinutes} min',
+                                  widget.library.bookmarks.containsKey(
+                                        title.path,
+                                      )
+                                      ? 'Bookmarked'
+                                      : 'Bookmark show',
                                 ),
                               ),
-                            ),
-                            if (detail.seasons.isNotEmpty && episode == 0)
-                              const Text(
-                                'Choose an episode to play or download.',
-                              ),
-                            const SizedBox(height: 7),
-                            ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth: wide ? 320 : double.infinity,
-                              ),
-                              child: OutlinedButton.icon(
-                                onPressed:
-                                    busy ||
-                                        task.active ||
-                                        !title.available ||
-                                        (detail.seasons.isNotEmpty &&
-                                            episode == 0)
-                                    ? null
-                                    : () => download(title),
-                                icon: downloadLabel == null
-                                    ? const Icon(Icons.download_outlined)
-                                    : const SizedBox.shrink(),
-                                label: downloadLabel == null
-                                    ? const Text('Download MP4')
-                                    : MovieBoxLoader(
-                                        label: downloadLabel!,
-                                        compact: true,
-                                      ),
-                              ),
-                            ),
-                            if (saved != null && File(saved.path).existsSync())
-                              TextButton.icon(
-                                onPressed: () => play(title, offline: saved),
-                                icon: const Icon(Icons.offline_pin),
-                                label: Text(
-                                  'Play downloaded ${saved.resolution}p',
+                              if (detail.seasons.isNotEmpty && episode == 0)
+                                const Text(
+                                  'Choose an episode to play or download.',
+                                ),
+                              const SizedBox(height: 7),
+                              ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: wide ? 320 : double.infinity,
+                                ),
+                                child: OutlinedButton.icon(
+                                  onPressed:
+                                      busy ||
+                                          task.active ||
+                                          !title.available ||
+                                          (detail.seasons.isNotEmpty &&
+                                              episode == 0)
+                                      ? null
+                                      : () => download(title),
+                                  icon: downloadLabel == null
+                                      ? const Icon(Icons.download_outlined)
+                                      : const SizedBox.shrink(),
+                                  label: downloadLabel == null
+                                      ? const Text('Download MP4')
+                                      : MovieBoxLoader(
+                                          label: downloadLabel!,
+                                          compact: true,
+                                        ),
                                 ),
                               ),
-                            DownloadControls(task: task),
+                              if (saved != null &&
+                                  File(saved.path).existsSync())
+                                TextButton.icon(
+                                  onPressed: () => play(title, offline: saved),
+                                  icon: const Icon(Icons.offline_pin),
+                                  label: Text(
+                                    'Play downloaded ${saved.resolution}p',
+                                  ),
+                                ),
+                              DownloadControls(task: task),
+                            ],
                             if (detail.seasons.isNotEmpty) ...[
                               const SizedBox(height: 20),
                               Row(
@@ -1628,19 +1846,28 @@ class _LibraryScreenState extends State<LibraryScreen> {
               (task.active || task.error != null))
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${task.title.title}${task.season > 0 ? ' · S${task.season} E${task.episode}' : ''}',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1D2529),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${task.title.title}${task.season > 0 ? ' · S${task.season} E${task.episode}' : ''}',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      DownloadControls(task: task),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  DownloadControls(task: task),
-                ],
+                ),
               ),
             ),
         const Padding(
@@ -1735,6 +1962,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
             title: Text(entry.title.title),
             subtitle: Text(
               '${entry.season > 0 ? 'S${entry.season} E${entry.episode} · ' : ''}${Duration(seconds: entry.positionSeconds).inMinutes} min watched',
+            ),
+            trailing: IconButton(
+              tooltip: 'Remove from continue watching',
+              icon: const Icon(Icons.close),
+              onPressed: () => widget.library.removeHistory(entry.key),
             ),
             onTap: () {
               final saved = widget.library.downloads[entry.key];

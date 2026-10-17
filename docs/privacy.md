@@ -4,7 +4,7 @@ This describes the checked-in implementation, not a guarantee about independentl
 
 ## On the device
 
-The Android and Linux app stores the selected server address, API token, bookmarks, watch history, and download metadata using `shared_preferences`. Media and subtitle downloads are stored in Android's application documents directory or Linux's application-support directory. The API token is not stored using a dedicated encrypted credential-storage package.
+The Android, Linux, and Windows app stores the selected server address, API token, bookmarks, watch history, and download metadata using `shared_preferences`. Media and subtitle downloads are stored in Android's application documents directory or the desktop application-support directory. The API token is not stored using a dedicated encrypted credential-storage package.
 
 Device users, backups, debugging tools, or compromised devices may expose local state. Use a unique token for this service rather than reusing an account password or another API credential. Android backup and retention behavior depends on device configuration; no guarantee of secure deletion is made.
 

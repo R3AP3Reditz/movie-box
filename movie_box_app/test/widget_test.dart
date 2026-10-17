@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:movie_box_app/api.dart';
+import 'package:movie_box_app/desktop.dart';
 import 'package:movie_box_app/library.dart';
 import 'package:movie_box_app/main.dart';
 import 'package:movie_box_app/model.dart';
@@ -424,16 +425,12 @@ void main() {
         .theme!
         .pageTransitionsTheme
         .builders;
-    expect(
-      (transitions[TargetPlatform.linux] as ZoomPageTransitionsBuilder)
-          .allowSnapshotting,
-      isFalse,
-    );
+    expect(transitions[TargetPlatform.linux], isA<MovieBoxPageTransitions>());
     expect(
       transitions[TargetPlatform.android].runtimeType,
       const PageTransitionsTheme().builders[TargetPlatform.android].runtimeType,
     );
-    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(find.byType(DesktopSidebar), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
     for (final pair in [
       ('Library', 'No bookmarks yet.'),
@@ -441,7 +438,12 @@ void main() {
       ('Downloads', 'Saved on this device'),
       ('Settings', 'API address'),
     ]) {
-      await tester.tap(find.text(pair.$1).first);
+      await tester.tap(
+        find.descendant(
+          of: find.byType(DesktopSidebar),
+          matching: find.byTooltip(pair.$1),
+        ),
+      );
       await tester.pump();
       expect(find.textContaining(pair.$2), findsWidgets);
       if (pair.$1 == 'Search') {
@@ -454,7 +456,12 @@ void main() {
         );
       }
     }
-    await tester.tap(find.text('Home').first);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(DesktopSidebar),
+        matching: find.byTooltip('Home'),
+      ),
+    );
     await tester.pump();
     expect(find.byType(HomeScreen), findsOneWidget);
   });
@@ -496,6 +503,9 @@ void main() {
     expect(MovieLibrary(prefs).bookmarks, isEmpty);
     await library.record(WatchEntry(title, 0, 0, 90, 200));
     expect(MovieLibrary(prefs).history['film:0:0']!.positionSeconds, 90);
+    await library.record(WatchEntry(title, 0, 0, 90, 200));
+    await library.removeHistory('film:0:0');
+    expect(MovieLibrary(prefs).history, isEmpty);
     await library.record(WatchEntry(title, 0, 0, 199, 200));
     expect(MovieLibrary(prefs).history, isEmpty);
   });

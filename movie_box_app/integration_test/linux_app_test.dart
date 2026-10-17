@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:movie_box_app/desktop.dart';
 import 'package:movie_box_app/library.dart';
 import 'package:movie_box_app/main.dart';
 import 'package:movie_box_app/player.dart';
@@ -177,7 +178,7 @@ void main() {
       tester,
       () => find.text('Linux fixtures').evaluate().isNotEmpty,
     );
-    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(find.byType(DesktopSidebar), findsOneWidget);
 
     Future<void> tap(Finder finder) async {
       await tester.ensureVisible(finder.first);
@@ -187,8 +188,8 @@ void main() {
 
     Future<void> tab(String label) => tap(
       find.descendant(
-        of: find.byType(NavigationRail),
-        matching: find.text(label),
+        of: find.byType(DesktopSidebar),
+        matching: find.byTooltip(label),
       ),
     );
     Future<void> back() => tap(find.byTooltip('Back'));

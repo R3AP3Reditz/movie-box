@@ -1,6 +1,8 @@
-# MovieBox Android and Linux app
+# MovieBox Android, Linux, and Windows app
 
-For native Linux builds, per-user installation, desktop playback, and download limitations, see the [Linux guide](../docs/linux.md).
+For native Linux builds, per-user installation, desktop playback, and download limitations, see the [Linux guide](../docs/linux.md). For native Windows builds, see the [Windows guide](../docs/windows.md).
+
+Desktop windows at least 900 logical pixels wide use the navigation rail and multi-column layouts; narrower windows fall back to the phone bottom-tab shell. On desktop, Ctrl/Command+1 to 5 select the five tabs and Ctrl/Command+F opens Search.
 
 Flutter client for the scraper API in `../scraper`. The app does not scrape MovieBox directly and contains no ads or account requirement.
 

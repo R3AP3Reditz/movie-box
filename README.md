@@ -1,6 +1,6 @@
 # Movie Box
 
-An ad-free Flutter Android and Linux client with a self-hostable Python catalog and playback API, created by **[R3AP3R Editz](https://github.com/iotserver24)**.
+An ad-free Flutter Android, Linux, and Windows client with a self-hostable Python catalog and playback API, created by **[R3AP3R Editz](https://github.com/iotserver24)**.
 
 Browse and search titles, resume watching, save bookmarks, and download media for offline playback where you have permission to do so. The client talks to the scraper API; the API returns metadata and media links rather than proxying video.
 
@@ -19,7 +19,7 @@ Browse and search titles, resume watching, save bookmarks, and download media fo
 - A Docker Compose deployment bound to localhost by default.
 - Offline creator-credit and project-license screens, plus dependency notices in Settings.
 
-**Current scope:** Android and Linux are the checked-in application targets. See the [Linux build and installation guide](docs/linux.md); Linux transfers require the app to remain running. In v1.0.4 (build 5), downloads continue in the background; Android force-stop and battery restrictions can still interrupt them. Reopen MovieBox to recover the persistent queue and resume or retry interrupted items in Downloads. Upstream catalog availability, signed links, subtitle availability, and quality restrictions can change; this project does not bypass locked content.
+**Current scope:** Android, Linux, and Windows are the checked-in application targets. See the [Linux build and installation guide](docs/linux.md) and the [Windows build and installation guide](docs/windows.md). Desktop transfers require the app to remain running; the Windows build has not been compiled or run by this project's Linux-based checks. In v1.0.4 (build 5), downloads continue in the background; Android force-stop and battery restrictions can still interrupt them. Reopen MovieBox to recover the persistent queue and resume or retry interrupted items in Downloads. Upstream catalog availability, signed links, subtitle availability, and quality restrictions can change; this project does not bypass locked content.
 
 ## Quick start
 
@@ -53,6 +53,8 @@ Set a strong `SCRAPER_API_TOKEN` before making the API reachable beyond localhos
 | [Architecture](docs/architecture.md) | Components, data flow, and implementation limits |
 | [Scraper API](scraper/README.md) | Endpoints and API behavior |
 | [Android client](movie_box_app/README.md) | Playback, downloads, and app checks |
+| [Linux desktop](docs/linux.md) | Linux requirements, build, install, and behavior |
+| [Windows desktop](docs/windows.md) | Windows requirements, build, install, and behavior |
 | [Privacy](docs/privacy.md) | Local storage, network requests, and deployment responsibilities |
 | [Licensing](docs/licensing.md) | Credit, no-ads, no-selling, and donation rules |
 | [Contributing](CONTRIBUTING.md) | Development workflow and review expectations |
@@ -87,7 +89,7 @@ These are commands to run locally, not claims that a particular revision has pas
 ## Project layout
 
 ```text
-movie_box_app/   Flutter Android application and widget tests
+movie_box_app/   Flutter Android, Linux, and Windows app with widget and integration tests
 scraper/         FastAPI service, provider adapter, and Python tests
 compose.yaml     Local Docker Compose deployment
 script.py        Standalone experimental downloader; not needed by the app
