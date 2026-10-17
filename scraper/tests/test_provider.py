@@ -8,6 +8,35 @@ from scraper.app import app, provider
 from scraper.models import Title
 from scraper.provider import MovieBoxProvider, ProviderError, _search_key, _search_rank
 
+def test_playback_skips_a_trailer_and_uses_the_full_episode():
+    trailer = {"id": "ad", "format": "MP4", "resolutions": "1080", "duration": 23, "size": 824720, "url": "https://cdn.test/trailer.mp4"}
+    episode = {"id": "ep", "format": "MP4", "resolutions": "1080", "duration": 3906, "size": 614938782, "url": "https://cdn.test/episode.mp4"}
+
+    def play(request):
+        path = request.url.params["detailPath"]
+        streams = [episode] if path == "mr-robot-6pNxPRjgt76" else [trailer]
+        return httpx.Response(200, json={"code": 0, "data": {"streams": streams}})
+
+    def handler(request):
+        if request.url.path.endswith("/detail"):
+            return httpx.Response(200, json={"code": 0, "data": {"subject": {**SERIES, "subjectId": "5136945138450711584", "detailPath": "5136945138450711584", "title": "Mr. Robot"}}})
+        if request.url.path.endswith("/subject/play"):
+            return play(request)
+        if request.url.path.endswith("/subject/search-suggest"):
+            return httpx.Response(200, json={"code": 0, "data": {"items": [{"word": "Mr. Robot series"}]}})
+        if request.url.path == "/newWeb/searchResult":
+            return httpx.Response(404)
+        if request.url.path.endswith("/subject/trending"):
+            return httpx.Response(200, headers={"x-user": json.dumps({"token": "guest"})}, json={"code": 0, "data": {}})
+        if request.url.path.endswith("/subject/search"):
+            return httpx.Response(200, json={"code": 0, "data": {"items": [{**SERIES, "subjectId": "5136945138450711584", "title": "Mr. Robot", "detailPath": "mr-robot-6pNxPRjgt76"}], "pager": {"hasMore": False}}})
+        raise AssertionError(request.url)
+
+    service = MovieBoxProvider(httpx.Client(base_url="https://themoviebox.xyz", transport=httpx.MockTransport(handler)))
+    playback = service.playback("5136945138450711584", 1, 1)
+    assert [stream.id for stream in playback.streams] == ["ep"]
+
+
 def test_mobile_catalog_requests_present_an_india_address():
     service = MovieBoxProvider(httpx.Client(base_url="https://themoviebox.xyz", transport=httpx.MockTransport(lambda request: httpx.Response(404))))
     headers = service._mobile_headers("POST", "https://api3.aoneroom.com/wefeed-mobile-bff/subject-api/search", "{}")
@@ -44,6 +73,7 @@ def test_home_and_paginated_browse():
     service = source({
         ("GET", "/wefeed-h5api-bff/home"): {"operatingList": [
             {"type": "BANNER", "banner": {"items": [{"subject": SUBJECT}]}},
+            {"type": "SUBJECTS_MOVIE", "title": "Hollywood", "subjects": [SUBJECT, SERIES]},
             {"type": "SUBJECTS_MOVIE", "title": "Western TV", "subjects": [SUBJECT]},
             {"type": "SUBJECTS_MOVIE", "title": "Trending Now", "subjects": [SERIES]},
             {"type": "SUBJECTS_MOVIE", "title": "Free Now!", "subjects": [SUBJECT]},
@@ -63,9 +93,11 @@ def test_home_and_paginated_browse():
     })
     home = service.home()
     assert home.banners[0].poster_url.endswith("poster.jpg")
-    assert [section.title for section in home.sections] == ["Series", "Movies", "Trending", "Cinema", "Western TV"]
-    assert home.sections[0].items[0].kind == "series"
+    assert [section.title for section in home.sections] == ["Hollywood", "Western TV", "Trending", "Cinema", "Movies", "Series"]
+    assert home.sections[0].items[0].kind == "movie"
     assert home.sections[1].items[0].kind == "movie"
+    assert home.sections[4].items[0].id == "123"
+    assert home.sections[5].items[0].id == "456"
     assert service.collection("movies").sections[0].items[0].id == "123"
     with pytest.raises(ProviderError):
         service.collection("unknown")
@@ -75,6 +107,23 @@ def test_home_and_paginated_browse():
     assert service.browse(1, "movie").items[0].kind == "movie"
     assert service.suggestions("Example") == ["Example Movie"]
     assert service.popular_searches() == ["Example Movie"]
+
+
+def test_home_builds_leading_rows_from_the_catalog_when_the_site_omits_them():
+    service = source({
+        ("GET", "/wefeed-h5api-bff/home"): {"operatingList": [
+            {"type": "SUBJECTS_MOVIE", "title": "Cinema", "subjects": [SUBJECT]},
+        ]},
+        ("POST", "/wefeed-h5api-bff/subject/filter"): lambda request: {
+            "items": [SERIES] if json.loads(request.content)["channelId"] == 2 else [SUBJECT],
+            "pager": {"hasMore": False},
+        },
+        ("GET", "/wefeed-h5api-bff/subject/trending"): {"subjectList": [SUBJECT], "pager": {"hasMore": False}},
+    })
+    home = service.home()
+    assert [section.title for section in home.sections] == ["Hollywood", "Western TV", "Trending", "Cinema", "Movies", "Series"]
+    assert home.sections[0].items[0].kind == "movie"
+    assert home.sections[1].items[0].kind == "series"
 
 
 def test_search_server_rendered_data():

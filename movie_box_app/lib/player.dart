@@ -751,6 +751,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
     setState(() => playbackSpeed = choice);
   }
 
+  RelativeRect? qualityMenuPosition;
+
+  RelativeRect menuAnchor(BuildContext buttonContext) {
+    final box = buttonContext.findRenderObject()! as RenderBox;
+    final overlay =
+        Navigator.of(buttonContext).overlay!.context.findRenderObject()!
+            as RenderBox;
+    final origin = box.localToGlobal(Offset.zero, ancestor: overlay);
+    return RelativeRect.fromRect(
+      Rect.fromLTWH(origin.dx, origin.dy, box.size.width, box.size.height),
+      Offset.zero & overlay.size,
+    );
+  }
+
   Future<void> chooseQuality() async {
     if (loading || actionLoading != null) return;
     try {
@@ -770,25 +784,46 @@ class _PlayerScreenState extends State<PlayerScreen> {
         .where((s) => s.format.toUpperCase() == 'MP4' && !s.locked)
         .toList();
     if (streams.isEmpty) return;
-    final choice = await showModalBottomSheet<MovieStream>(
-      context: context,
-      builder: (_) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            const ListTile(title: Text('Playback quality')),
-            for (final stream in streams.reversed)
-              ListTile(
-                title: Text('${stream.resolution}p'),
-                trailing: stream.id == selected?.id
-                    ? const Icon(Icons.check)
-                    : null,
-                onTap: () => Navigator.pop(context, stream),
+    final choice = desktopWindow
+        ? await showMenu<MovieStream>(
+            context: context,
+            position:
+                qualityMenuPosition ?? const RelativeRect.fromLTRB(0, 0, 0, 0),
+            constraints: const BoxConstraints(minWidth: 148, maxWidth: 168),
+            items: [
+              for (final stream in streams.reversed)
+                PopupMenuItem(
+                  value: stream,
+                  height: 36,
+                  child: Row(
+                    children: [
+                      Expanded(child: Text('${stream.resolution}p')),
+                      if (stream.id == selected?.id)
+                        const Icon(Icons.check, size: 16),
+                    ],
+                  ),
+                ),
+            ],
+          )
+        : await showModalBottomSheet<MovieStream>(
+            context: context,
+            builder: (_) => SafeArea(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  const ListTile(title: Text('Playback quality')),
+                  for (final stream in streams.reversed)
+                    ListTile(
+                      title: Text('${stream.resolution}p'),
+                      trailing: stream.id == selected?.id
+                          ? const Icon(Icons.check)
+                          : null,
+                      onTap: () => Navigator.pop(context, stream),
+                    ),
+                ],
               ),
-          ],
-        ),
-      ),
-    );
+            ),
+          );
     if (choice == null || choice.id == selected?.id || !mounted) return;
     setState(() {
       loading = true;
@@ -1345,7 +1380,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ),
                           ),
                   ),
-                  if (controlsVisible) ...[
+                  if (controlsVisible && desktopWindow) desktopDock(player),
+                  if (controlsVisible && !desktopWindow) ...[
                     Positioned.fill(
                       top: expandedControls ? 56 : 0,
                       bottom: expandedControls ? panelHeight + 48 : 0,
@@ -1421,7 +1457,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         ),
                       ),
                   ],
-                  if (controlsVisible && player.value.isInitialized)
+                  if (controlsVisible &&
+                      player.value.isInitialized &&
+                      !desktopWindow)
                     Positioned(
                       top: expandedControls ? 72 : 8,
                       right: 8,
@@ -1966,6 +2004,279 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
+  (int, int)? neighborEpisode(int delta) {
+    final index = episodeOptions.indexWhere(
+      (item) => item.$1 == season && item.$2 == episode,
+    );
+    final next = index + delta;
+    if (index < 0 || next < 0 || next >= episodeOptions.length) return null;
+    return episodeOptions[next];
+  }
+
+  Widget desktopDock(VideoPlayerController player) {
+    final previous = neighborEpisode(-1);
+    final next = neighborEpisode(1);
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0x00000000), Color(0xF2101519)],
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 36, 12, 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    formatTime(player.value.position),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  Expanded(
+                    child: VideoProgressIndicator(
+                      player,
+                      allowScrubbing: true,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      colors: const VideoProgressColors(
+                        playedColor: Color(0xFFF2B86B),
+                        bufferedColor: Color(0x66F2B86B),
+                        backgroundColor: Color(0x33FFFFFF),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    formatTime(player.value.duration),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Previous episode',
+                    onPressed: previous == null
+                        ? null
+                        : () => changeEpisode(previous.$1, previous.$2),
+                    icon: const Icon(Icons.skip_previous),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Material(
+                      color: const Color(0xFFF2B86B),
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: togglePlayback,
+                        child: SizedBox(
+                          width: 48,
+                          height: 48,
+                          child: Icon(
+                            player.value.isPlaying
+                                ? Icons.pause
+                                : Icons.play_arrow,
+                            color: const Color(0xFF1A140C),
+                            size: 28,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Next episode',
+                    onPressed: next == null
+                        ? null
+                        : () => changeEpisode(next.$1, next.$2),
+                    icon: const Icon(Icons.skip_next),
+                  ),
+                  IconButton(
+                    tooltip: 'Back 10 seconds',
+                    onPressed: () => seekBy(-10),
+                    icon: const Icon(Icons.replay_10),
+                  ),
+                  IconButton(
+                    tooltip: 'Forward 10 seconds',
+                    onPressed: () => seekBy(10),
+                    icon: const Icon(Icons.forward_10),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: muted ? 'Unmute' : 'Mute',
+                    onPressed: toggleMute,
+                    icon: Icon(
+                      muted || volume == 0 ? Icons.volume_off : Icons.volume_up,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 110,
+                    child: Slider(
+                      value: muted ? 0 : volume,
+                      onChanged: (value) {
+                        setState(() {
+                          volume = value;
+                          muted = value == 0;
+                        });
+                        player.setVolume(value);
+                        revealControls();
+                      },
+                    ),
+                  ),
+                  PopupMenuButton<double>(
+                    tooltip: 'Speed',
+                    initialValue: playbackSpeed,
+                    constraints: const BoxConstraints(
+                      minWidth: 120,
+                      maxWidth: 140,
+                    ),
+                    offset: const Offset(0, -220),
+                    onSelected: (speed) {
+                      playbackSpeed = speed;
+                      player.setPlaybackSpeed(speed);
+                      showCue(speedLabel);
+                    },
+                    itemBuilder: (context) => [
+                      for (final speed in playbackSpeeds)
+                        PopupMenuItem(
+                          value: speed,
+                          child: Text(speed == 1 ? 'Normal' : '${speed}x'),
+                        ),
+                    ],
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text(speedLabel),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Subtitles',
+                    onPressed: chooseCaption,
+                    icon: const Icon(Icons.closed_caption),
+                  ),
+                  Builder(
+                    builder: (buttonContext) => IconButton(
+                      tooltip: 'Quality',
+                      onPressed: currentOffline == null
+                          ? () {
+                              qualityMenuPosition = menuAnchor(buttonContext);
+                              chooseQuality();
+                            }
+                          : null,
+                      icon: const Icon(Icons.high_quality),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: fullscreen ? 'Exit fullscreen' : 'Fullscreen',
+                    onPressed: toggleFullscreen,
+                    icon: Icon(
+                      fullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget desktopEpisodeStrip() {
+    final episodes = episodeOptions.where((item) => item.$1 == season).toList();
+    final seasons = detail?.seasons ?? [];
+    return ColoredBox(
+      color: const Color(0xFF12181C),
+      child: SizedBox(
+        height: 108,
+        child: Column(
+          children: [
+            SizedBox(
+              height: 36,
+              child: Row(
+                children: [
+                  const SizedBox(width: 20),
+                  const Text(
+                    'Episodes',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const Spacer(),
+                  if (seasons.isNotEmpty)
+                    DropdownButton<int>(
+                      value: seasons.any((item) => item.number == season)
+                          ? season
+                          : seasons.first.number,
+                      underline: const SizedBox.shrink(),
+                      items: [
+                        for (final item in seasons)
+                          DropdownMenuItem(
+                            value: item.number,
+                            child: Text('Season ${item.number}'),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) changeEpisode(value, 1);
+                      },
+                    ),
+                  const SizedBox(width: 12),
+                ],
+              ),
+            ),
+            SizedBox(
+              height: 64,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: episodes.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final item = episodes[index];
+                  final current = item.$1 == season && item.$2 == episode;
+                  return Material(
+                    color: current
+                        ? const Color(0xFFF2B86B)
+                        : const Color(0xFF1E272C),
+                    borderRadius: BorderRadius.circular(10),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: current
+                          ? null
+                          : () => changeEpisode(item.$1, item.$2),
+                      child: SizedBox(
+                        width: 132,
+                        child: Center(
+                          child: Text(
+                            current
+                                ? 'Episode ${item.$2}  ·  Playing'
+                                : 'Episode ${item.$2}',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: current
+                                  ? const Color(0xFF1A140C)
+                                  : Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget desktopStage(VideoPlayerController? player, MovieTitle info) {
     final showRail = info.kind != 'movie' && episodeOptions.isNotEmpty;
     return LayoutBuilder(
@@ -2205,12 +2516,25 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
           body: MouseRegion(
+            cursor: desktopWindow && !controlsVisible
+                ? SystemMouseCursors.none
+                : MouseCursor.defer,
             onHover: desktopWindow ? (_) => revealControls() : null,
             onEnter: desktopWindow ? (_) => revealControls() : null,
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: expandedControls
+                  child: desktopWindow
+                      ? fullscreen
+                            ? ColoredBox(
+                                color: Colors.black,
+                                child: videoSurface(player),
+                              )
+                            : SafeArea(
+                                top: false,
+                                child: desktopStage(player, info),
+                              )
+                      : expandedControls
                       ? expandedPlayer(player, info)
                       : SafeArea(
                           top: false,

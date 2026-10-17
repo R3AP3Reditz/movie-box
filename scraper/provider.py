@@ -68,8 +68,13 @@ def _title(raw: dict) -> Title:
     )
 
 
+# The site's own Hollywood and Western TV rows lead the home screen. The
+# catalog rows they replace keep their built-in movie and series names and
+# move to the end of the list.
+_TOP_HOME = ("hollywood", "western tv")
+
 # Regional and language rows from the India site. They stay after the
-# general series, movies, and trending rows.
+# leading rows and the general editorial rows.
 _LATE_HOME = (
     "western", "bollywood", "south indian", "indian", "hollywood",
     "anime", "asian", "dussehra", "nollywood", "korean", "k-drama",
@@ -289,27 +294,39 @@ class MovieBoxProvider:
     def home(self) -> Home:
         def load() -> Home:
             upstream = _sections(self._data("/home", params={"host": "themoviebox.xyz"}))
-            series = self.catalog("series", 1).items
             movies = self.catalog("movies", 1).items
+            series = self.catalog("series", 1).items
             trending = next((section.items for section in upstream.sections if "trend" in section.title.casefold()), None)
             if not trending:
                 trending = self.browse(1).items
+            leading = {}
             early = []
             late = []
             for section in upstream.sections:
                 folded = section.title.casefold().strip()
+                if folded in _TOP_HOME:
+                    leading[folded] = section
+                    continue
                 if "trend" in folded or "free" in folded or folded in {"movies", "movie", "series", "tv series"}:
                     continue
                 (late if _late_home_section(section.title) else early).append(section)
             sections = []
-            if series:
-                sections.append(Section(title="Series", kind="catalog", items=series))
-            if movies:
-                sections.append(Section(title="Movies", kind="catalog", items=movies))
+            if "hollywood" in leading:
+                sections.append(leading["hollywood"])
+            elif movies:
+                sections.append(Section(title="Hollywood", kind="catalog", items=movies))
+            if "western tv" in leading:
+                sections.append(leading["western tv"])
+            elif series:
+                sections.append(Section(title="Western TV", kind="catalog", items=series))
             if trending:
                 sections.append(Section(title="Trending", kind="catalog", items=trending))
             sections.extend(early)
             sections.extend(late)
+            if movies:
+                sections.append(Section(title="Movies", kind="catalog", items=movies))
+            if series:
+                sections.append(Section(title="Series", kind="catalog", items=series))
             return Home(banners=upstream.banners, sections=sections)
 
         return self._cached("home", load)
@@ -514,6 +531,30 @@ class MovieBoxProvider:
     def _has_streams(self, data: dict) -> bool:
         return any(item.get("url") for item in (data.get("streams") or []) + (data.get("dash") or []) + (data.get("hls") or []))
 
+    def _preview_stream(self, item: dict) -> bool:
+        # The phone API sometimes returns the trailer: about 20 seconds and
+        # under a megabyte. A real episode is many minutes and hundreds of MB.
+        duration = _number(item.get("duration")) or 0
+        size = _number(item.get("size")) or 0
+        return 0 < duration <= 30 and (size == 0 or size < 5_000_000)
+
+    def _stream_rows(self, data: dict) -> list[dict]:
+        rows = [item for item in (data.get("streams") or []) + (data.get("dash") or []) + (data.get("hls") or []) if item.get("url")]
+        usable = [item for item in rows if not self._preview_stream(item)]
+        return usable or ([] if rows and all(self._preview_stream(item) for item in rows) else rows)
+
+    def _slug_for(self, title: Title) -> str | None:
+        if title.detail_path and not str(title.detail_path).isdigit():
+            return title.detail_path
+        try:
+            found = self.search(title.title, 1)
+        except ProviderError:
+            return None
+        for item in found.items:
+            if item.id == str(title.id) and "-" in item.detail_path:
+                return item.detail_path
+        return None
+
     def _probe_seasons(self, detail_path: str, subject_id: str) -> list[Season]:
         seasons = []
         for number in range(1, 21):
@@ -593,18 +634,36 @@ class MovieBoxProvider:
             season, episode = 0, 0
         if title.kind in ("series", "short_series") and (season < 1 or episode < 1):
             raise ProviderError("Series playback requires season and episode", 422)
-        title_page = f"{BASE_URL}/movies/{detail_path}"
+        play_path = detail_path if not str(detail_path).isdigit() else (self._slug_for(title) or detail_path)
+        title_page = f"{BASE_URL}/movies/{play_path}"
         try:
-            data = self._data("/subject/play", params={"subjectId": title.id, "se": season, "ep": episode, "detailPath": detail_path, "streamSignType": 1, "supportCodecs[h264]": 1}, referer=title_page)
+            data = self._play_data(play_path, title.id, season, episode)
         except ProviderError:
             data = {}
-        if not self._has_streams(data) and str(title.id).isdigit() and self._mobile_enabled():
-            data = self._mobile_json("GET", f"/wefeed-mobile-bff/subject-api/play-info?subjectId={title.id}&se={season}&ep={episode}")
+        rows = self._stream_rows(data)
+        if not rows and play_path == detail_path and str(detail_path).isdigit():
+            slug = self._slug_for(title)
+            if slug and slug != play_path:
+                try:
+                    data = self._play_data(slug, title.id, season, episode)
+                    play_path = slug
+                    title_page = f"{BASE_URL}/movies/{play_path}"
+                    rows = self._stream_rows(data)
+                except ProviderError:
+                    rows = []
+        preview_only = bool(self._has_streams(data) and not rows)
+        if not rows and str(title.id).isdigit() and self._mobile_enabled():
+            try:
+                mobile = self._mobile_json("GET", f"/wefeed-mobile-bff/subject-api/play-info?subjectId={title.id}&se={season}&ep={episode}")
+            except ProviderError:
+                mobile = {}
+            preview_only = preview_only or bool(self._has_streams(mobile) and not self._stream_rows(mobile))
+            rows = self._stream_rows(mobile)
+        if not rows and preview_only:
+            raise ProviderError("The only available copy is an ad, not the episode", 404)
         streams = []
-        for value in (data.get("streams") or []) + (data.get("dash") or []) + (data.get("hls") or []):
+        for value in rows:
             url = value.get("url")
-            if not url:
-                continue
             streams.append(Stream(id=str(value.get("id") or ""), format=value.get("format") or "", resolutions=str(value.get("resolutions") or ""), codec=value.get("codecName"), size_bytes=_number(value.get("size")), duration_seconds=_number(value.get("duration")), url=url, request_headers={"Referer": title_page, "Origin": BASE_URL}, vip_locked=bool(value.get("vipLocked"))))
         return Playback(title_id=title.id, season=season, episode=episode, streams=streams, limited=bool(data.get("limited")), vip_locked=bool(data.get("vipLocked")), max_resolution=_number((data.get("playConfig") or {}).get("maxResolution")))
 
