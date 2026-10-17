@@ -97,7 +97,7 @@ def test_search_uses_suggestion_spelling_for_the_website_page():
 
     service = MovieBoxProvider(httpx.Client(base_url="https://themoviebox.xyz", transport=httpx.MockTransport(handler)))
     assert service.search("mr robot").items[0].title == "Example Movie"
-    assert seen == ["Mr. Robot"]
+    assert seen == ["mr robot series"]
 
 
 def test_search_page_includes_series_missing_from_json_search():

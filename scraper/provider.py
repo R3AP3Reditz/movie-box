@@ -261,15 +261,17 @@ class MovieBoxProvider:
             return None
 
     def _website_query(self, keyword: str) -> str:
-        # The site page for "mr robot" omits the series that "Mr. Robot" includes.
+        # The exact title page often omits the multi-season series. The
+        # suggestion that adds "series" ("mr robot series") is the page that
+        # includes it. An equal spelling ("Mr. Robot") is the next best page.
         try:
-            wanted = _search_key(keyword)
-            for word in self.suggestions(keyword):
-                if word and _search_key(word) == wanted:
-                    return word
+            words = [word for word in self.suggestions(keyword) if word]
         except ProviderError:
             return keyword
-        return keyword
+        wanted = _search_key(keyword)
+        series = next((word for word in words if _search_key(word).startswith(wanted) and "series" in word.casefold()), None)
+        exact = next((word for word in words if _search_key(word) == wanted), None)
+        return series or exact or keyword
 
     def search(self, keyword: str, page: int = 1) -> Page:
         def load():
