@@ -20,6 +20,9 @@ MOBILE_BOOT = "https://apig.inmoviebox.com/wefeed-mobile-bff/tab/ranking-list?ta
 # page omits some series, including Mr. Robot, when the request comes from a
 # hosting provider. This client sends region IN and still returns them.
 _MOBILE_SECRET = base64.b64decode(base64.b64decode("NzZpUmwwN3MweFNOOWpxbUVXQXQ3OUVCSlp1bElRSXNWNjRGWnIyTw=="))
+# The catalog follows X-Forwarded-For. A France VPS otherwise receives a
+# different list that keeps "Mr. Robot Digital After Show" and drops the series.
+_CATALOG_IP = "106.192.10.20"
 
 
 class ProviderError(Exception):
@@ -136,7 +139,7 @@ class MovieBoxProvider:
         self._guest_token_value: str | None = None
         self._mobile_token_value: str | None = None
         self._mobile_device = secrets.token_hex(16)
-        self.headers = {"Referer": f"{BASE_URL}/", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", "Accept-Language": "en-US,en;q=0.9", "X-Request-Lang": "en"}
+        self.headers = {"Referer": f"{BASE_URL}/", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", "Accept-Language": "en-US,en;q=0.9", "X-Request-Lang": "en", "X-Forwarded-For": _CATALOG_IP, "X-Real-IP": _CATALOG_IP}
 
     def _mobile_enabled(self) -> bool:
         return type(getattr(self.client, "_transport", None)).__name__ != "MockTransport"
@@ -156,7 +159,7 @@ class MovieBoxProvider:
         canonical = "\n".join(["GET" if method == "GET" else "POST", "application/json", "application/json", body_length, str(timestamp), body_hash, canonical_url])
         signature = base64.b64encode(hmac.new(_MOBILE_SECRET, canonical.encode(), hashlib.md5).digest()).decode()
         info = {"package_name": "com.community.mbox.in", "version_name": "4.0.03.0920.03", "version_code": 50020130, "os": "android", "os_version": "14", "device_id": self._mobile_device, "region": "IN", "timezone": "Asia/Calcutta"}
-        headers = {"user-agent": "com.community.mbox.in/50020130 (Linux; U; Android 14; en_IN)", "accept": "application/json", "content-type": "application/json", "x-client-token": f"{timestamp},{hashlib.md5(str(timestamp)[::-1].encode()).hexdigest()}", "x-tr-signature": f"{timestamp}|2|{signature}", "x-client-info": json.dumps(info, separators=(",", ":")), "x-client-status": "0"}
+        headers = {"user-agent": "com.community.mbox.in/50020130 (Linux; U; Android 14; en_IN)", "accept": "application/json", "content-type": "application/json", "x-client-token": f"{timestamp},{hashlib.md5(str(timestamp)[::-1].encode()).hexdigest()}", "x-tr-signature": f"{timestamp}|2|{signature}", "x-client-info": json.dumps(info, separators=(",", ":")), "x-client-status": "0", "X-Forwarded-For": _CATALOG_IP, "X-Real-IP": _CATALOG_IP}
         if token:
             headers["authorization"] = f"Bearer {token}"
         return headers
@@ -374,7 +377,7 @@ class MovieBoxProvider:
         if self._mobile_enabled():
             try:
                 from curl_cffi import requests as browser
-                response = browser.get(f"{BASE_URL}/newWeb/searchResult", params={"keyword": keyword}, headers={"Referer": f"{BASE_URL}/", "Accept-Language": "en-US,en;q=0.9"}, impersonate="chrome131", timeout=20)
+                response = browser.get(f"{BASE_URL}/newWeb/searchResult", params={"keyword": keyword}, headers={"Referer": f"{BASE_URL}/", "Accept-Language": "en-US,en;q=0.9", "X-Forwarded-For": _CATALOG_IP, "X-Real-IP": _CATALOG_IP}, impersonate="chrome131", timeout=20)
                 if response.status_code == 200 and "__NUXT_DATA__" in response.text:
                     return response.text
             except Exception:

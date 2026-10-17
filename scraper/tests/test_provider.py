@@ -8,6 +8,13 @@ from scraper.app import app, provider
 from scraper.models import Title
 from scraper.provider import MovieBoxProvider, ProviderError, _search_key, _search_rank
 
+def test_mobile_catalog_requests_present_an_india_address():
+    service = MovieBoxProvider(httpx.Client(base_url="https://themoviebox.xyz", transport=httpx.MockTransport(lambda request: httpx.Response(404))))
+    headers = service._mobile_headers("POST", "https://api3.aoneroom.com/wefeed-mobile-bff/subject-api/search", "{}")
+    assert headers["X-Forwarded-For"] == "106.192.10.20"
+    assert headers["X-Real-IP"] == "106.192.10.20"
+
+
 def test_search_rank_puts_the_official_series_ahead_of_the_same_named_stub():
     wanted = _search_key("Mr. Robot")
     official = Title(id="5136945138450711584", detail_path="mr-robot-6pNxPRjgt76", kind="series", title="Mr. Robot S1-S4", has_resource=True)
