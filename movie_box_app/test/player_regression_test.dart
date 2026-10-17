@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:movie_box_app/api.dart';
+import 'package:movie_box_app/download_probe.dart';
 import 'package:movie_box_app/library.dart';
 import 'package:movie_box_app/loading.dart';
 import 'package:movie_box_app/model.dart';
@@ -518,6 +520,33 @@ void main() {
     fixture.directory.deleteSync(recursive: true);
     VideoPlayerPlatform.instance = originalPlatform;
   });
+
+  testWidgets('Linux keeps window navigation and uses native fullscreen', (tester) async {
+    final calls = <MethodCall>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      mediaChannel,
+      (call) async { calls.add(call); return null; },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(mediaChannel, null);
+    });
+    await _mountScreen(tester, PlayerScreen(
+      api: fixture.api, library: fixture.library, title: fixture.title,
+      season: 1, episode: 2,
+    ));
+    await _until(tester, () => find.byType(VideoPlayer).evaluate().isNotEmpty);
+    await tester.pumpAndSettle();
+    expect(find.byType(AppBar), findsOneWidget);
+    await tester.tap(find.byTooltip('Fullscreen'));
+    await tester.pumpAndSettle();
+    expect(calls.where((call) => call.method == 'setFullscreen').last.arguments, true);
+    expect(find.byType(AppBar), findsNothing);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(calls.where((call) => call.method == 'setFullscreen').last.arguments, false);
+    expect(find.byType(AppBar), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  }, variant: TargetPlatformVariant({TargetPlatform.linux}));
 
   group('player loading', () {
     for (final size in [const Size(390, 844), const Size(960, 540)]) {
@@ -1411,9 +1440,14 @@ void main() {
         fixture.platform.sources[player.playerId]!.uri,
         contains('s1-e2-1080.mp4'),
       );
-      expect(fixture.platform.sources[player.playerId]!.httpHeaders, {
-        'Referer': 'https://origin.example.test',
-      });
+      expect(
+        fixture.platform.sources[player.playerId]!.httpHeaders,
+        downloadRequestHeaders({'Referer': 'https://origin.example.test'}),
+      );
+      expect(
+        fixture.platform.sources[player.playerId]!.httpHeaders['User-Agent'],
+        isNot('ExoPlayer'),
+      );
       expect(find.text('Quality 1080p'), findsOneWidget);
       expect(fixture.playbackRequests.single.queryParameters, {
         'season': '1',

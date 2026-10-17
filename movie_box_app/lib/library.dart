@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
+import 'desktop.dart';
 import 'download_backend.dart';
 import 'download_probe.dart';
 import 'model.dart';
@@ -23,7 +24,9 @@ bool get _foreground =>
     WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
 
 Future<String?> extractThumbnail(String path) async {
-  if (!_foreground) return null;
+  if (isDesktopWindow || !_foreground) {
+    return null;
+  }
   try {
     return await mediaChannel.invokeMethod<String>('thumbnail', path);
   } on PlatformException {

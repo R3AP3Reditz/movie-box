@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:background_downloader/background_downloader.dart' as native;
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:movie_box_app/api.dart';
 import 'package:movie_box_app/download_backend.dart';
@@ -238,6 +240,137 @@ void main() {
     library.dispose();
     api.close();
     await directory.delete(recursive: true);
+  });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.linux]) {
+    test('${platform.name} pending final-copy files are not finalized', () async {
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      var task = await start();
+      final video = backend.enqueued.single;
+      backend.status(video, native.TaskStatus.running);
+      final file = File(await video.filePath());
+      for (final length in [2, 4]) {
+        await file.writeAsBytes(List.filled(length, 7));
+        await library.initializeDownloads();
+        expect(task.statusLabel, 'Downloading');
+        expect(task.error, isNull);
+        expect(library.downloads, isEmpty);
+        expect(backend.enqueued, hasLength(1));
+      }
+      library.dispose();
+      library = createLibrary();
+      task = library.taskFor(title, 1, 2);
+      await library.initializeDownloads();
+      expect(task.complete, isFalse);
+      expect(library.downloads, isEmpty);
+      backend.running.remove(video.taskId);
+      await library.initializeDownloads();
+      expect(task.complete, isTrue);
+      expect(library.downloads.values.single.path, file.path);
+      expect(backend.enqueued, hasLength(1));
+    });
+
+    test('${platform.name} selects the expected default download storage', () async {
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      const channel = MethodChannel('plugins.flutter.io/path_provider');
+      final calls = <String>[];
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call.method);
+        return '${directory.path}/${call.method}';
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      library.dispose();
+      library = MovieLibrary(prefs, downloadBackend: backend);
+      await start();
+      final method = platform == TargetPlatform.linux
+          ? 'getApplicationSupportDirectory'
+          : 'getApplicationDocumentsDirectory';
+      expect(calls, [method]);
+      expect(
+        await backend.enqueued.single.filePath(),
+        startsWith('${directory.path}/$method/downloads/'),
+      );
+    });
+
+    test('${platform.name} honors an injected download directory', () async {
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      const channel = MethodChannel('plugins.flutter.io/path_provider');
+      var calls = 0;
+      messenger.setMockMethodCallHandler(channel, (_) async {
+        calls++;
+        throw PlatformException(code: 'UNEXPECTED_PATH_LOOKUP');
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      await start();
+      expect(calls, 0);
+      expect(
+        await backend.enqueued.single.filePath(),
+        startsWith('${directory.path}/downloads/'),
+      );
+    });
+
+    test('${platform.name} uses only supported thumbnail channels', () async {
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      var calls = 0;
+      messenger.setMockMethodCallHandler(mediaChannel, (call) async {
+        expect(call.method, 'thumbnail');
+        calls++;
+        return '${call.arguments}.preview.jpg';
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(mediaChannel, null));
+      final task = await start();
+      final video = backend.enqueued.single;
+      await complete(video);
+      await library.backfillThumbnails();
+      expect(task.complete, isTrue);
+      if (platform == TargetPlatform.linux) {
+        expect(calls, 0);
+        expect(library.downloads.values.single.thumbnailPath, isNull);
+      } else {
+        expect(calls, greaterThan(0));
+        expect(
+          library.downloads.values.single.thumbnailPath,
+          '${await video.filePath()}.preview.jpg',
+        );
+      }
+    });
+  }
+
+  test('Pending caption files are not attached before completion', () async {
+    final task = await start(subtitle: caption);
+    final video = backend.enqueued.first;
+    final subtitle = backend.enqueued.last;
+    await File(await subtitle.filePath()).writeAsString('partial caption');
+    await complete(video);
+    await library.initializeDownloads();
+    expect(task.complete, isTrue);
+    expect(library.downloads.values.single.subtitlePath, isNull);
+    expect(backend.enqueued, hasLength(2));
+    await complete(subtitle);
+    expect(library.downloads.values.single.subtitlePath, await subtitle.filePath());
+  });
+
+  test('Interrupted final-copy files fail validation after the worker exits', () async {
+    await start();
+    final video = backend.enqueued.single;
+    await File(await video.filePath()).writeAsBytes([1, 2]);
+    backend.running.clear();
+    library.dispose();
+    library = createLibrary();
+    await library.initializeDownloads();
+    expect(library.downloads, isEmpty);
+    expect(library.taskFor(title, 1, 2).error, contains('incomplete'));
+    expect(backend.enqueued, hasLength(1));
   });
 
   test(

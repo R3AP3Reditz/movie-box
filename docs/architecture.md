@@ -2,7 +2,7 @@
 
 ## Components
 
-- **`movie_box_app/`** is the Flutter Android client. `api.dart` calls the scraper API, `model.dart` parses response models, `screens.dart` contains the main screens, `player.dart` handles playback, and `library.dart` stores preferences, watch history, bookmarks, and download state.
+- **`movie_box_app/`** is the Flutter Android and Linux client. `api.dart` calls the scraper API, `model.dart` parses response models, `screens.dart` contains the main screens, `player.dart` handles playback, and `library.dart` stores preferences, watch history, bookmarks, and download state.
 - **`movie_box_app/lib/downloads.dart`** coordinates the persistent download queue as part of `library.dart`. `download_backend.dart` connects it to `background_downloader` platform workers and Android progress notifications. Transfers are not tied to an individual Flutter screen's lifetime.
 - **`scraper/app.py`** exposes FastAPI endpoints and optional bearer-token validation. `models.py` defines response schemas, and `provider.py` adapts upstream catalog and playback services to that API.
 - **`movie_box_app/lib/notices.dart`** displays creator credit, the bundled project license and acknowledgments, and Flutter's dependency-license page. `scripts/sync_notices.py` synchronizes the app assets from the canonical root notices; `--check` detects drift without writing.
@@ -18,7 +18,7 @@ Flutter client -----------------> returned artwork, media, and subtitle URLs
 
 The API returns metadata, stream URLs, and required request headers. It does not proxy or store the video. Playback and downloads contact the returned media hosts from the device. Catalog/detail responses have a short in-memory cache; playback and caption links are fetched fresh.
 
-The API has no database or user-account system. A deployment may require a shared bearer token on `/v1/` requests. Its health and API-documentation endpoints remain unauthenticated. The client stores local state in shared preferences and downloaded files in its application documents directory.
+The API has no database or user-account system. A deployment may require a shared bearer token on `/v1/` requests. Its health and API-documentation endpoints remain unauthenticated. The client stores local state in shared preferences. Android downloads use its application documents directory; Linux downloads use application-support storage. Linux playback is provided by `video_player_media_kit` and libmpv; Android retains `video_player_android`. Linux transfers run in-process and stop when the app exits. See [Linux setup](linux.md).
 
 ## Boundaries and limitations
 

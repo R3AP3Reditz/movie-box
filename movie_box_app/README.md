@@ -1,4 +1,6 @@
-# MovieBox Android app
+# MovieBox Android and Linux app
+
+For native Linux builds, per-user installation, desktop playback, and download limitations, see the [Linux guide](../docs/linux.md).
 
 Flutter client for the scraper API in `../scraper`. The app does not scrape MovieBox directly and contains no ads or account requirement.
 

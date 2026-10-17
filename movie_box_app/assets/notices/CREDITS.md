@@ -18,6 +18,7 @@ Movie Box depends on independently maintained software. These components retain 
 | --- | --- |
 | Application framework | Flutter and Dart |
 | Flutter packages | `cupertino_icons`, `http`, `shared_preferences`, `path_provider`, `video_player`, `cached_network_image` |
+| Linux playback | `video_player_media_kit`, `media_kit_libs_linux`, transitive `media_kit` / `media_kit_video`, and system libmpv |
 | Python API | FastAPI, HTTPX, Pydantic, Uvicorn |
 | Standalone experimental downloader | Requests (separate from the API requirements) |
 | Packaging | Python container image and its operating-system packages; Android build tooling |

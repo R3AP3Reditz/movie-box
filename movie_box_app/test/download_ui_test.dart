@@ -73,6 +73,16 @@ void main() {
     await directory.delete(recursive: true);
   });
 
+  testWidgets('Linux downloads explain the app must remain running', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: LibraryScreen(api: api, library: library)),
+    ));
+    await tester.pump();
+    expect(find.textContaining('Keep MovieBox running'), findsOneWidget);
+    expect(find.textContaining('Android notifications'), findsNothing);
+    expect(tester.takeException(), isNull);
+  }, variant: TargetPlatformVariant({TargetPlatform.linux}));
+
   testWidgets(
     'Details and Downloads share progress without cancelling on navigation',
     (tester) async {

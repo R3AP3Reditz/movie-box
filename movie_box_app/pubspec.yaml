@@ -1,5 +1,5 @@
 name: movie_box_app
-description: "An ad-free Android client for a self-hosted Movie Box API."
+description: "An ad-free Android, Linux, and Windows client for a self-hosted Movie Box API."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -41,6 +41,9 @@ dependencies:
   video_player: ^2.14.0
   cached_network_image: ^4.0.2
   url_launcher: ^6.3.2
+  video_player_media_kit: ^2.0.0
+  media_kit_libs_linux: ^1.2.1
+  media_kit_libs_windows_video: ^1.0.11
 
 dev_dependencies:
   flutter_test:
@@ -55,6 +58,8 @@ dev_dependencies:
   mockito: ^5.8.1
   video_player_platform_interface: ^6.9.0
   url_launcher_platform_interface: ^2.3.2
+  integration_test:
+    sdk: flutter
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

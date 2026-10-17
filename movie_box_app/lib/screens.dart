@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'desktop.dart';
 import 'download_controls.dart';
 import 'library.dart';
 import 'loading.dart';
@@ -123,10 +124,16 @@ class DownloadArtwork extends StatelessWidget {
 class Poster extends StatelessWidget {
   final MovieTitle title;
   final VoidCallback onTap;
-  const Poster({super.key, required this.title, required this.onTap});
+  final double width;
+  const Poster({
+    super.key,
+    required this.title,
+    required this.onTap,
+    this.width = 130,
+  });
   @override
   Widget build(BuildContext context) => SizedBox(
-    width: 130,
+    width: width,
     child: InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -160,10 +167,7 @@ class TitleGrid extends StatelessWidget {
   const TitleGrid({super.key, required this.items, required this.onTap});
   @override
   Widget build(BuildContext context) {
-    final columns = (MediaQuery.sizeOf(context).width / 155).floor().clamp(
-      2,
-      6,
-    );
+    final columns = gridColumns(context);
     return SliverPadding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       sliver: SliverGrid.builder(
@@ -183,7 +187,8 @@ class TitleGrid extends StatelessWidget {
 
 class ScreenHeader extends StatelessWidget {
   final String title;
-  const ScreenHeader(this.title, {super.key});
+  final VoidCallback? onRefresh;
+  const ScreenHeader(this.title, {super.key, this.onRefresh});
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(18, 17, 12, 10),
@@ -195,6 +200,12 @@ class ScreenHeader extends StatelessWidget {
             style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
           ),
         ),
+        if (onRefresh != null)
+          IconButton(
+            tooltip: 'Refresh',
+            icon: const Icon(Icons.refresh),
+            onPressed: onRefresh,
+          ),
         IconButton(
           tooltip: 'Settings',
           icon: const Icon(Icons.settings_outlined),
@@ -261,7 +272,7 @@ class _HomeScreenState extends State<HomeScreen> {
           return ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              const ScreenHeader('MovieBox'),
+              ScreenHeader('MovieBox', onRefresh: reload),
               SizedBox(
                 height: 400,
                 child: Center(
@@ -280,7 +291,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           children: [
-            const ScreenHeader('MovieBox'),
+            ScreenHeader('MovieBox', onRefresh: reload),
             PopularCarousel(
               titles: home.sections
                   .where(
@@ -366,79 +377,117 @@ class PopularCarousel extends StatefulWidget {
 
 class _PopularCarouselState extends State<PopularCarousel> {
   int index = 0;
+  final pages = PageController();
+
+  @override
+  void dispose() {
+    pages.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final titles = widget.titles.isEmpty ? widget.fallback : widget.titles;
     if (titles.isEmpty) return const SizedBox.shrink();
+    final desktop = MediaQuery.sizeOf(context).width >= wideLayoutBreakpoint;
+    final height = desktop ? 380.0 : 265.0;
     return Column(
       children: [
         SizedBox(
-          height: 265,
-          child: PageView.builder(
-            itemCount: titles.length,
-            onPageChanged: (value) => setState(() => index = value),
-            itemBuilder: (context, page) {
-              final title = titles[page];
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: InkWell(
-                  onTap: () => widget.onTap(title),
-                  borderRadius: BorderRadius.circular(18),
-                  focusColor: const Color(0x66F2B86B),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(18),
-                    child: Stack(
-                      alignment: Alignment.bottomLeft,
-                      children: [
-                        SizedBox.expand(
-                          child: Artwork(
-                            url: title.backdrop ?? title.poster,
-                            width: 900,
-                          ),
-                        ),
-                        Container(
-                          height: 150,
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [Colors.transparent, Color(0xEE101519)],
+          height: height,
+          child: Stack(
+            children: [
+              PageView.builder(
+                controller: pages,
+                itemCount: titles.length,
+                onPageChanged: (value) => setState(() => index = value),
+                itemBuilder: (context, page) {
+                  final title = titles[page];
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: InkWell(
+                      onTap: () => widget.onTap(title),
+                      borderRadius: BorderRadius.circular(18),
+                      focusColor: const Color(0x66F2B86B),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(18),
+                        child: Stack(
+                          alignment: Alignment.bottomLeft,
+                          children: [
+                            SizedBox.expand(
+                              child: Artwork(
+                                url: title.backdrop ?? title.poster,
+                                width: desktop ? 1600 : 900,
+                              ),
                             ),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.all(18),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'POPULAR NOW',
-                                style: TextStyle(
-                                  color: Color(0xFFF2B86B),
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 2,
+                            Container(
+                              height: 150,
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    Color(0xEE101519),
+                                  ],
                                 ),
                               ),
-                              Text(
-                                title.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 25,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.all(18),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'POPULAR NOW',
+                                    style: TextStyle(
+                                      color: Color(0xFFF2B86B),
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 2,
+                                    ),
+                                  ),
+                                  Text(
+                                    title.title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 25,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const Text('Watch now  ›'),
+                                ],
                               ),
-                              const Text('Watch now  ›'),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
-              );
-            },
+                  );
+                },
+              ),
+              if (desktop)
+                for (final (alignment, icon, target) in [
+                  (Alignment.centerLeft, Icons.chevron_left, index - 1),
+                  (Alignment.centerRight, Icons.chevron_right, index + 1),
+                ])
+                  if (target >= 0 && target < titles.length)
+                    Align(
+                      alignment: alignment,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 26),
+                        child: _CarouselArrow(
+                          icon: icon,
+                          onPressed: () => pages.animateToPage(
+                            target,
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeOut,
+                          ),
+                        ),
+                      ),
+                    ),
+            ],
           ),
         ),
         Padding(
@@ -466,89 +515,110 @@ class _PopularCarouselState extends State<PopularCarousel> {
   }
 }
 
+class _CarouselArrow extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onPressed;
+  const _CarouselArrow({required this.icon, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: const Color(0xCC101519),
+    shape: const CircleBorder(),
+    child: IconButton(
+      tooltip: icon == Icons.chevron_left ? 'Previous' : 'Next',
+      onPressed: onPressed,
+      icon: Icon(icon),
+    ),
+  );
+}
+
 class ContinueRow extends StatelessWidget {
   final List<WatchEntry> entries;
   final MovieLibrary library;
   final void Function(WatchEntry) onTap;
   const ContinueRow(this.entries, this.library, this.onTap, {super.key});
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      const Padding(
-        padding: EdgeInsets.fromLTRB(18, 14, 18, 12),
-        child: Text(
-          'Continue Watching',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+  Widget build(BuildContext context) {
+    final width = posterWidth(context);
+    final thumbHeight = width * 1.13;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(18, 14, 18, 12),
+          child: Text(
+            'Continue Watching',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
         ),
-      ),
-      SizedBox(
-        height: 260,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 18),
-          itemCount: entries.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 12),
-          itemBuilder: (_, index) {
-            final entry = entries[index];
-            final progress = entry.durationSeconds <= 0
-                ? 0.0
-                : (entry.positionSeconds / entry.durationSeconds).clamp(
-                    0.0,
-                    1.0,
-                  );
-            return SizedBox(
-              width: 155,
-              child: InkWell(
-                onTap: () => onTap(entry),
-                borderRadius: BorderRadius.circular(10),
-                focusColor: const Color(0x66F2B86B),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: SizedBox(
-                        height: 175,
-                        width: 155,
-                        child: DownloadArtwork(
-                          title: entry.title,
-                          download: library.downloads[entry.key],
+        SizedBox(
+          height: thumbHeight + 78,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            itemCount: entries.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 12),
+            itemBuilder: (_, index) {
+              final entry = entries[index];
+              final progress = entry.durationSeconds <= 0
+                  ? 0.0
+                  : (entry.positionSeconds / entry.durationSeconds).clamp(
+                      0.0,
+                      1.0,
+                    );
+              return SizedBox(
+                width: width,
+                child: InkWell(
+                  onTap: () => onTap(entry),
+                  borderRadius: BorderRadius.circular(10),
+                  focusColor: const Color(0x66F2B86B),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: SizedBox(
+                          height: thumbHeight,
+                          width: width,
+                          child: DownloadArtwork(
+                            title: entry.title,
+                            download: library.downloads[entry.key],
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    LinearProgressIndicator(
-                      value: progress,
-                      minHeight: 4,
-                      backgroundColor: const Color(0xFF343D41),
-                      color: const Color(0xFFDF4B47),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      entry.title.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    Text(
-                      entry.season > 0
-                          ? 'S${entry.season} E${entry.episode} · ${entry.positionSeconds ~/ 60} min'
-                          : '${entry.positionSeconds ~/ 60} min watched',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFFBCC8C9),
+                      const SizedBox(height: 4),
+                      LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 4,
+                        backgroundColor: const Color(0xFF343D41),
+                        color: const Color(0xFFDF4B47),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 5),
+                      Text(
+                        entry.title.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        entry.season > 0
+                            ? 'S${entry.season} E${entry.episode} · ${entry.positionSeconds ~/ 60} min'
+                            : '${entry.positionSeconds ~/ 60} min watched',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFFBCC8C9),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
-      ),
-    ],
-  );
+      ],
+    );
+  }
 }
 
 class MovieRow extends StatelessWidget {
@@ -557,29 +627,35 @@ class MovieRow extends StatelessWidget {
   final void Function(MovieTitle) onTap;
   const MovieRow(this.heading, this.titles, this.onTap, {super.key});
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
-        child: Text(
-          heading,
-          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+  Widget build(BuildContext context) {
+    final width = posterWidth(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
+          child: Text(
+            heading,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
         ),
-      ),
-      SizedBox(
-        height: 245,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 18),
-          itemCount: titles.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 12),
-          itemBuilder: (_, index) =>
-              Poster(title: titles[index], onTap: () => onTap(titles[index])),
+        SizedBox(
+          height: width * 1.5 + 56,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            itemCount: titles.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 12),
+            itemBuilder: (_, index) => Poster(
+              title: titles[index],
+              width: width,
+              onTap: () => onTap(titles[index]),
+            ),
+          ),
         ),
-      ),
-    ],
-  );
+      ],
+    );
+  }
 }
 
 class ErrorPanel extends StatelessWidget {
@@ -678,7 +754,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
     child: CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        SliverToBoxAdapter(child: ScreenHeader(widget.label)),
+        SliverToBoxAdapter(
+          child: ScreenHeader(widget.label, onRefresh: reload),
+        ),
         if (items.isNotEmpty)
           TitleGrid(
             items: items,
@@ -767,7 +845,7 @@ class _SearchScreenState extends State<SearchScreen> {
     if (oldWidget.api != widget.api) changed(text.text);
     if (widget.active &&
         !oldWidget.active &&
-        MediaQuery.sizeOf(context).width >= 900) {
+        MediaQuery.sizeOf(context).width >= wideLayoutBreakpoint) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && widget.active) searchFocus.requestFocus();
       });
@@ -861,67 +939,82 @@ class _SearchScreenState extends State<SearchScreen> {
         child: Column(
           children: [
             const ScreenHeader('Search'),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      focusNode: searchFocus,
-                      controller: text,
-                      textInputAction: TextInputAction.search,
-                      onChanged: changed,
-                      onSubmitted: (_) => submit(),
-                      decoration: InputDecoration(
-                        hintText: 'Find a movie or series',
-                        prefixIcon: const Icon(Icons.search),
-                        suffixIcon: MediaQuery.sizeOf(context).width >= 900
-                            ? null
-                            : IconButton(
-                                tooltip: 'Search',
-                                icon: const Icon(Icons.arrow_forward),
-                                onPressed: submit,
-                              ),
+            ContentFrame(
+              maxWidth: 760,
+              alignment: Alignment.topLeft,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        focusNode: searchFocus,
+                        controller: text,
+                        textInputAction: TextInputAction.search,
+                        onChanged: changed,
+                        onSubmitted: (_) => submit(),
+                        decoration: InputDecoration(
+                          hintText: 'Find a movie or series',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon:
+                              MediaQuery.sizeOf(context).width >=
+                                  wideLayoutBreakpoint
+                              ? null
+                              : IconButton(
+                                  tooltip: 'Search',
+                                  icon: const Icon(Icons.arrow_forward),
+                                  onPressed: submit,
+                                ),
+                        ),
                       ),
                     ),
-                  ),
-                  if (MediaQuery.sizeOf(context).width >= 900) ...[
-                    const SizedBox(width: 12),
-                    FilledButton.icon(
-                      onPressed: submit,
-                      icon: const Icon(Icons.search),
-                      label: const Text('Search'),
-                    ),
-                    const SizedBox(width: 8),
-                    TextButton(
-                      onPressed: () {
-                        text.clear();
-                        changed('');
-                      },
-                      child: const Text('Clear'),
-                    ),
+                    if (MediaQuery.sizeOf(context).width >=
+                        wideLayoutBreakpoint) ...[
+                      const SizedBox(width: 12),
+                      FilledButton.icon(
+                        onPressed: submit,
+                        icon: const Icon(Icons.search),
+                        label: const Text('Search'),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () {
+                          text.clear();
+                          changed('');
+                        },
+                        child: const Text('Clear'),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
-            if (hints.isNotEmpty) ...[
-              const Padding(
-                padding: EdgeInsets.fromLTRB(18, 20, 18, 4),
-                child: Text(
-                  'POPULAR SEARCHES',
-                  style: TextStyle(
-                    color: Color(0xFFF2B86B),
-                    letterSpacing: 1.5,
-                  ),
+            if (hints.isNotEmpty)
+              ContentFrame(
+                maxWidth: 760,
+                alignment: Alignment.topLeft,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(18, 20, 18, 4),
+                      child: Text(
+                        'POPULAR SEARCHES',
+                        style: TextStyle(
+                          color: Color(0xFFF2B86B),
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                    ),
+                    for (final hint in hints.take(10))
+                      ListTile(
+                        title: Text(hint),
+                        trailing: const Icon(Icons.north_west, size: 18),
+                        onTap: () => submit(hint),
+                      ),
+                  ],
                 ),
               ),
-              for (final hint in hints.take(10))
-                ListTile(
-                  title: Text(hint),
-                  trailing: const Icon(Icons.north_west, size: 18),
-                  onTap: () => submit(hint),
-                ),
-            ],
           ],
         ),
       ),
@@ -1043,16 +1136,13 @@ class _DetailScreenState extends State<DetailScreen> {
     if (!showEpisodeSearch || query.isEmpty) {
       return all.where((item) => item.$1 == selectedSeason).toList();
     }
-    final explicit = RegExp(
-      r's(?:eason)?\s*(\d+)\s*e(?:p(?:isode)?)?\s*(\d+)',
-    ).firstMatch(query);
+    final explicit = RegExp(r's(?:eason)?\s*(\d+)\s*e(?:p(?:isode)?)?\s*(\d+)')
+        .firstMatch(query);
     if (explicit != null) {
       final wantedSeason = int.parse(explicit.group(1)!);
       final wantedEpisode = int.parse(explicit.group(2)!);
       return all
-          .where(
-            (item) => item.$1 == wantedSeason && item.$2 == wantedEpisode,
-          )
+          .where((item) => item.$1 == wantedSeason && item.$2 == wantedEpisode)
           .toList();
     }
     final number = int.tryParse(query);
@@ -1214,208 +1304,253 @@ class _DetailScreenState extends State<DetailScreen> {
               widget.library.history[viewingKey(title.path, season, episode)];
           final saved =
               widget.library.downloads[viewingKey(title.path, season, episode)];
+          final wide =
+              MediaQuery.sizeOf(context).width >= splitLayoutBreakpoint;
           return ListView(
             children: [
               SizedBox(
-                height: 230,
+                height: wide ? 340 : 230,
                 child: Artwork(
                   url: title.backdrop ?? title.poster,
-                  width: 1080,
+                  width: wide ? 1600 : 1080,
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title.title,
-                      style: const TextStyle(
-                        fontSize: 29,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      [
-                        title.kind.toUpperCase(),
-                        if (title.rating != null) 'IMDb ${title.rating}',
-                        ...title.genres.take(3),
-                      ].join('  ·  '),
-                      style: const TextStyle(color: Color(0xFFBCC8C9)),
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      title.description.isEmpty
-                          ? 'No synopsis available.'
-                          : title.description,
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed:
-                            title.available &&
-                                (detail.seasons.isEmpty || episode > 0)
-                            ? () => play(
-                                title,
-                                offline:
-                                    saved != null &&
-                                        File(saved.path).existsSync()
-                                    ? saved
-                                    : null,
-                              )
-                            : null,
-                        icon: const Icon(Icons.play_arrow),
-                        label: Text(
-                          watch == null
-                              ? 'Play'
-                              : 'Continue at ${Duration(seconds: watch.positionSeconds).inMinutes} min',
-                        ),
-                      ),
-                    ),
-                    if (detail.seasons.isNotEmpty && episode == 0)
-                      const Text('Choose an episode to play or download.'),
-                    const SizedBox(height: 7),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed:
-                            busy ||
-                                task.active ||
-                                !title.available ||
-                                (detail.seasons.isNotEmpty && episode == 0)
-                            ? null
-                            : () => download(title),
-                        icon: downloadLabel == null
-                            ? const Icon(Icons.download_outlined)
-                            : const SizedBox.shrink(),
-                        label: downloadLabel == null
-                            ? const Text('Download MP4')
-                            : MovieBoxLoader(
-                                label: downloadLabel!,
-                                compact: true,
+              ContentFrame(
+                maxWidth: 1140,
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (wide) ...[
+                        SizedBox(
+                          width: 240,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: AspectRatio(
+                              aspectRatio: 2 / 3,
+                              child: Artwork(
+                                url: title.poster ?? title.backdrop,
+                                width: 480,
                               ),
-                      ),
-                    ),
-                    if (saved != null && File(saved.path).existsSync())
-                      TextButton.icon(
-                        onPressed: () => play(title, offline: saved),
-                        icon: const Icon(Icons.offline_pin),
-                        label: Text('Play downloaded ${saved.resolution}p'),
-                      ),
-                    DownloadControls(task: task),
-                    if (detail.seasons.isNotEmpty) ...[
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              'Episodes',
-                              style: TextStyle(
-                                fontSize: 20,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 28),
+                      ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title.title,
+                              style: const TextStyle(
+                                fontSize: 29,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                          ),
-                          IconButton(
-                            tooltip: 'Find episode',
-                            icon: Icon(
-                              showEpisodeSearch ? Icons.close : Icons.search,
+                            const SizedBox(height: 8),
+                            Text(
+                              [
+                                title.kind.toUpperCase(),
+                                if (title.rating != null)
+                                  'IMDb ${title.rating}',
+                                ...title.genres.take(3),
+                              ].join('  ·  '),
+                              style: const TextStyle(color: Color(0xFFBCC8C9)),
                             ),
-                            onPressed: () => setState(() {
-                              showEpisodeSearch = !showEpisodeSearch;
-                              if (!showEpisodeSearch) episodeSearch.clear();
-                            }),
-                          ),
-                        ],
-                      ),
-                      if (showEpisodeSearch)
-                        TextField(
-                          controller: episodeSearch,
-                          keyboardType: TextInputType.text,
-                          decoration: const InputDecoration(
-                            hintText: 'Episode number, or S2 E4',
-                            prefixIcon: Icon(Icons.search),
-                            isDense: true,
-                          ),
-                          onChanged: (_) => setState(() {}),
-                        ),
-                      const SizedBox(height: 8),
-                      DropdownButton<int>(
-                        value: detail.seasons.any((s) => s.number == season)
-                            ? season
-                            : detail.seasons.first.number,
-                        items: [
-                          for (final s in detail.seasons)
-                            DropdownMenuItem(
-                              value: s.number,
-                              child: Text('Season ${s.number}'),
+                            const SizedBox(height: 14),
+                            Text(
+                              title.description.isEmpty
+                                  ? 'No synopsis available.'
+                                  : title.description,
                             ),
-                        ],
-                        onChanged: (value) => setState(() {
-                          season = value!;
-                          episode = 1;
-                        }),
-                      ),
-                      Builder(
-                        builder: (context) {
-                          final matches = visibleEpisodes(detail);
-                          final searching =
-                              showEpisodeSearch &&
-                              episodeSearch.text.trim().isNotEmpty;
-                          if (matches.isEmpty) {
-                            return const Padding(
-                              padding: EdgeInsets.only(top: 8),
-                              child: Text('No episode matches that.'),
-                            );
-                          }
-                          return Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              for (final item in matches)
-                                ChoiceChip(
-                                  label: Text(
-                                    searching
-                                        ? 'S${item.$1} E${item.$2}'
-                                        : '${item.$2}',
+                            const SizedBox(height: 20),
+                            ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: wide ? 320 : double.infinity,
+                              ),
+                              child: FilledButton.icon(
+                                onPressed:
+                                    title.available &&
+                                        (detail.seasons.isEmpty || episode > 0)
+                                    ? () => play(
+                                        title,
+                                        offline:
+                                            saved != null &&
+                                                File(saved.path).existsSync()
+                                            ? saved
+                                            : null,
+                                      )
+                                    : null,
+                                icon: const Icon(Icons.play_arrow),
+                                label: Text(
+                                  watch == null
+                                      ? 'Play'
+                                      : 'Continue at ${Duration(seconds: watch.positionSeconds).inMinutes} min',
+                                ),
+                              ),
+                            ),
+                            if (detail.seasons.isNotEmpty && episode == 0)
+                              const Text(
+                                'Choose an episode to play or download.',
+                              ),
+                            const SizedBox(height: 7),
+                            ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: wide ? 320 : double.infinity,
+                              ),
+                              child: OutlinedButton.icon(
+                                onPressed:
+                                    busy ||
+                                        task.active ||
+                                        !title.available ||
+                                        (detail.seasons.isNotEmpty &&
+                                            episode == 0)
+                                    ? null
+                                    : () => download(title),
+                                icon: downloadLabel == null
+                                    ? const Icon(Icons.download_outlined)
+                                    : const SizedBox.shrink(),
+                                label: downloadLabel == null
+                                    ? const Text('Download MP4')
+                                    : MovieBoxLoader(
+                                        label: downloadLabel!,
+                                        compact: true,
+                                      ),
+                              ),
+                            ),
+                            if (saved != null && File(saved.path).existsSync())
+                              TextButton.icon(
+                                onPressed: () => play(title, offline: saved),
+                                icon: const Icon(Icons.offline_pin),
+                                label: Text(
+                                  'Play downloaded ${saved.resolution}p',
+                                ),
+                              ),
+                            DownloadControls(task: task),
+                            if (detail.seasons.isNotEmpty) ...[
+                              const SizedBox(height: 20),
+                              Row(
+                                children: [
+                                  const Expanded(
+                                    child: Text(
+                                      'Episodes',
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                   ),
-                                  selected:
-                                      episode == item.$2 &&
-                                      season == item.$1,
-                                  onSelected: (_) => setState(() {
-                                    season = item.$1;
-                                    episode = item.$2;
-                                  }),
+                                  IconButton(
+                                    tooltip: 'Find episode',
+                                    icon: Icon(
+                                      showEpisodeSearch
+                                          ? Icons.close
+                                          : Icons.search,
+                                    ),
+                                    onPressed: () => setState(() {
+                                      showEpisodeSearch = !showEpisodeSearch;
+                                      if (!showEpisodeSearch) {
+                                        episodeSearch.clear();
+                                      }
+                                    }),
+                                  ),
+                                ],
+                              ),
+                              if (showEpisodeSearch)
+                                TextField(
+                                  controller: episodeSearch,
+                                  keyboardType: TextInputType.text,
+                                  decoration: const InputDecoration(
+                                    hintText: 'Episode number, or S2 E4',
+                                    prefixIcon: Icon(Icons.search),
+                                    isDense: true,
+                                  ),
+                                  onChanged: (_) => setState(() {}),
+                                ),
+                              const SizedBox(height: 8),
+                              DropdownButton<int>(
+                                value:
+                                    detail.seasons.any(
+                                      (s) => s.number == season,
+                                    )
+                                    ? season
+                                    : detail.seasons.first.number,
+                                items: [
+                                  for (final s in detail.seasons)
+                                    DropdownMenuItem(
+                                      value: s.number,
+                                      child: Text('Season ${s.number}'),
+                                    ),
+                                ],
+                                onChanged: (value) => setState(() {
+                                  season = value!;
+                                  episode = 1;
+                                }),
+                              ),
+                              Builder(
+                                builder: (context) {
+                                  final matches = visibleEpisodes(detail);
+                                  final searching =
+                                      showEpisodeSearch &&
+                                      episodeSearch.text.trim().isNotEmpty;
+                                  if (matches.isEmpty) {
+                                    return const Padding(
+                                      padding: EdgeInsets.only(top: 8),
+                                      child: Text('No episode matches that.'),
+                                    );
+                                  }
+                                  return Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      for (final item in matches)
+                                        ChoiceChip(
+                                          label: Text(
+                                            searching
+                                                ? 'S${item.$1} E${item.$2}'
+                                                : '${item.$2}',
+                                          ),
+                                          selected:
+                                              episode == item.$2 &&
+                                              season == item.$1,
+                                          onSelected: (_) => setState(() {
+                                            season = item.$1;
+                                            episode = item.$2;
+                                          }),
+                                        ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ],
+                            if (detail.dubs.isNotEmpty) ...[
+                              const SizedBox(height: 18),
+                              const Text(
+                                'Other audio versions',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              for (final dub in detail.dubs)
+                                ListTile(
+                                  title: Text(dub.title),
+                                  trailing: const Icon(Icons.chevron_right),
+                                  onTap: () => openTitle(
+                                    context,
+                                    widget.api,
+                                    widget.library,
+                                    dub,
+                                  ),
                                 ),
                             ],
-                          );
-                        },
-                      ),
-                    ],
-                    if (detail.dubs.isNotEmpty) ...[
-                      const SizedBox(height: 18),
-                      const Text(
-                        'Other audio versions',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                          ],
                         ),
                       ),
-                      for (final dub in detail.dubs)
-                        ListTile(
-                          title: Text(dub.title),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => openTitle(
-                            context,
-                            widget.api,
-                            widget.library,
-                            dub,
-                          ),
-                        ),
                     ],
-                  ],
+                  ),
                 ),
               ),
               FutureBuilder<MoviePage>(
@@ -1477,11 +1612,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return ListView(
       children: [
         const ScreenHeader('Downloads'),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(18, 8, 18, 12),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
           child: Text(
-            'Downloads continue in the background. Android notifications show progress. '
-            'If your device stops a transfer, reopen MovieBox to recover it.',
+            isDesktopWindow
+                ? 'Keep MovieBox running while downloading. You can minimize the window. '
+                      'If you close the app, reopen it to recover interrupted transfers.'
+                : 'Downloads continue in the background. Android notifications show progress. '
+                      'If your device stops a transfer, reopen MovieBox to recover it.',
           ),
         ),
         for (final task in widget.library.downloadTasks.values)
@@ -1763,74 +1901,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final content = ListView(
-      padding: const EdgeInsets.all(18),
-      children: [
-        if (!widget.standalone)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 16),
-            child: Text(
-              'Settings',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+    final content = ContentFrame(
+      maxWidth: 760,
+      child: ListView(
+        padding: const EdgeInsets.all(18),
+        children: [
+          if (!widget.standalone)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 16),
+              child: Text(
+                'Settings',
+                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+              ),
+            ),
+          const Text(
+            'Connect to your scraper',
+            style: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Your server address is hidden. Leave this field blank to keep your current connection, or enter a new address to change it.',
+          ),
+          const SizedBox(height: 22),
+          TextField(
+            controller: address,
+            enabled: !testing,
+            keyboardType: TextInputType.url,
+            decoration: const InputDecoration(
+              labelText: 'API address',
+              hintText: 'Enter a new server address',
             ),
           ),
-        const Text(
-          'Connect to your scraper',
-          style: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        const Text(
-          'Your server address is hidden. Leave this field blank to keep your current connection, or enter a new address to change it.',
-        ),
-        const SizedBox(height: 22),
-        TextField(
-          controller: address,
-          enabled: !testing,
-          keyboardType: TextInputType.url,
-          decoration: const InputDecoration(
-            labelText: 'API address',
-            hintText: 'Enter a new server address',
+          const SizedBox(height: 16),
+          TextField(
+            controller: token,
+            enabled: !testing,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'API token (if configured)',
+            ),
           ),
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          controller: token,
-          enabled: !testing,
-          obscureText: true,
-          decoration: const InputDecoration(
-            labelText: 'API token (if configured)',
+          const SizedBox(height: 20),
+          FilledButton(
+            onPressed: testing ? null : save,
+            child: testing
+                ? MovieBoxLoader(
+                    label: saving ? 'Saving connection' : 'Connecting',
+                    compact: true,
+                  )
+                : const Text('Connect and save'),
           ),
-        ),
-        const SizedBox(height: 20),
-        FilledButton(
-          onPressed: testing ? null : save,
-          child: testing
-              ? MovieBoxLoader(
-                  label: saving ? 'Saving connection' : 'Connecting',
-                  compact: true,
-                )
-              : const Text('Connect and save'),
-        ),
-        const SizedBox(height: 10),
-        const Text(
-          'Use this app and server only on a trusted network or private VPN.',
-        ),
-        const Divider(height: 32),
-        const DonateButton(),
-        const SizedBox(height: 10),
-        const Text(
-          'Donations are optional and do not unlock features. Opens an external support page; review its public donor notice before donating.',
-        ),
-        const SizedBox(height: 12),
-        ListTile(
-          leading: const Icon(Icons.info_outline),
-          title: const Text('Credits and licenses'),
-          subtitle: const Text('Movie Box by R3AP3R Editz'),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const CreditsScreen()),
+          const SizedBox(height: 10),
+          const Text(
+            'Use this app and server only on a trusted network or private VPN.',
           ),
-        ),
-      ],
+          const Divider(height: 32),
+          const DonateButton(),
+          const SizedBox(height: 10),
+          const Text(
+            'Donations are optional and do not unlock features. Opens an external support page; review its public donor notice before donating.',
+          ),
+          const SizedBox(height: 12),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('Credits and licenses'),
+            subtitle: const Text('Movie Box by R3AP3R Editz'),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const CreditsScreen()),
+            ),
+          ),
+        ],
+      ),
     );
     return widget.standalone
         ? Scaffold(

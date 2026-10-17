@@ -1,6 +1,6 @@
 # Movie Box
 
-An ad-free Flutter Android client with a self-hostable Python catalog and playback API, created by **[R3AP3R Editz](https://github.com/iotserver24)**.
+An ad-free Flutter Android and Linux client with a self-hostable Python catalog and playback API, created by **[R3AP3R Editz](https://github.com/iotserver24)**.
 
 Browse and search titles, resume watching, save bookmarks, and download media for offline playback where you have permission to do so. The client talks to the scraper API; the API returns metadata and media links rather than proxying video.
 
@@ -19,7 +19,7 @@ Browse and search titles, resume watching, save bookmarks, and download media fo
 - A Docker Compose deployment bound to localhost by default.
 - Offline creator-credit and project-license screens, plus dependency notices in Settings.
 
-**Current scope:** Android is the checked-in application target. In v1.0.4 (build 5), downloads continue in the background; Android force-stop and battery restrictions can still interrupt them. Reopen MovieBox to recover the persistent queue and resume or retry interrupted items in Downloads. Upstream catalog availability, signed links, subtitle availability, and quality restrictions can change; this project does not bypass locked content.
+**Current scope:** Android and Linux are the checked-in application targets. See the [Linux build and installation guide](docs/linux.md); Linux transfers require the app to remain running. In v1.0.4 (build 5), downloads continue in the background; Android force-stop and battery restrictions can still interrupt them. Reopen MovieBox to recover the persistent queue and resume or retry interrupted items in Downloads. Upstream catalog availability, signed links, subtitle availability, and quality restrictions can change; this project does not bypass locked content.
 
 ## Quick start
 

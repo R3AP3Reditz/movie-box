@@ -45,7 +45,9 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "dev.r3ap3r.movie_box_app"
+        // Separate from the previous release so a new signing key can install
+        // beside an existing copy instead of being rejected as an update.
+        applicationId = "dev.r3ap3r.moviebox"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

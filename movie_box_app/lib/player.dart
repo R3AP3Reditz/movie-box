@@ -8,7 +8,9 @@ import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
 import 'api.dart';
+import 'desktop.dart';
 import 'download_controls.dart';
+import 'download_probe.dart';
 import 'library.dart';
 import 'loading.dart';
 import 'model.dart';
@@ -52,7 +54,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool controlsVisible = true;
   final videoFocus = FocusNode(debugLabel: 'Video');
   final tvControlsFocus = FocusNode(debugLabel: 'TV controls');
+  bool get desktopWindow => isDesktopWindow;
   bool get tvMode =>
+      !desktopWindow &&
       MediaQuery.sizeOf(context).width >= 900 &&
       MediaQuery.sizeOf(context).shortestSide >= 500;
   bool get expandedControls => tvMode || fullscreen;
@@ -291,7 +295,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     await attach(
       VideoPlayerController.networkUrl(
         Uri.parse(stream.url),
-        httpHeaders: stream.headers,
+        // The Android player otherwise sends User-Agent "ExoPlayer", which
+        // this CDN answers with HTTP 428.
+        httpHeaders: downloadRequestHeaders(stream.headers),
       ),
       at: position,
       play: !resume || (controller?.value.isPlaying ?? true),
@@ -964,6 +970,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> toggleFullscreen() async {
+    if (desktopWindow) {
+      try {
+        await mediaChannel.invokeMethod<void>('setFullscreen', !fullscreen);
+      } on MissingPluginException {
+        // A desktop runner without the native handler keeps its windowed size.
+        return;
+      }
+      if (mounted) setState(() => fullscreen = !fullscreen);
+      revealControls();
+      return;
+    }
     if (fullscreen) {
       if (rotatedFullscreen) {
         await SystemChrome.setPreferredOrientations([
@@ -1032,6 +1049,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     child: Container(
       color: Colors.black,
       width: double.infinity,
+      constraints: desktopWindow && !fullscreen
+          ? BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.65)
+          : null,
       child: AspectRatio(
         aspectRatio: fullscreen
             ? MediaQuery.sizeOf(context).aspectRatio
@@ -1653,7 +1673,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
     controlsTimer?.cancel();
     videoFocus.dispose();
     tvControlsFocus.dispose();
-    if (fullscreen || tvImmersive) {
+    if (desktopWindow && fullscreen) {
+      unawaited(
+        mediaChannel
+            .invokeMethod<void>('setFullscreen', false)
+            .catchError((Object _) {}),
+      );
+    } else if (fullscreen || tvImmersive) {
       if (rotatedFullscreen) {
         SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
       }

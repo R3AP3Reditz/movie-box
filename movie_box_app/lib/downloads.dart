@@ -495,7 +495,9 @@ class _DownloadCoordinator {
       task.total = metadata.length;
       final directory =
           await (library.downloadsDirectory?.call() ??
-              getApplicationDocumentsDirectory());
+              (isDesktopWindow
+                  ? getApplicationSupportDirectory()
+                  : getApplicationDocumentsDirectory()));
       if (task.cancelled) return;
       final id = _id();
       final destination = Directory('${directory.path}/downloads/$id');
@@ -829,20 +831,20 @@ class _DownloadCoordinator {
         }
       }
       if (!_current(task, video.taskId)) continue;
-      // The native worker atomically moves only a finished file to this path.
-      if (await File(DownloadTask._path(video)!).exists()) {
-        await _finalize(task);
-      } else if (task.complete) {
-        library.downloads.remove(task.key);
-        await library._saveDownloads();
-        task._state = 'failed';
-        task.error =
-            'The downloaded file is missing. Retry to download it again.';
-      } else if (task.active &&
-          !task.paused &&
-          !pending.containsKey(video.taskId)) {
-        await replaceGeneration(task);
-        continue;
+      // Desktop workers copy to the final path before reporting completion.
+      if (!pending.containsKey(video.taskId)) {
+        if (await File(DownloadTask._path(video)!).exists()) {
+          await _finalize(task);
+        } else if (task.complete) {
+          library.downloads.remove(task.key);
+          await library._saveDownloads();
+          task._state = 'failed';
+          task.error =
+              'The downloaded file is missing. Retry to download it again.';
+        } else if (task.active && !task.paused) {
+          await replaceGeneration(task);
+          continue;
+        }
       }
       final subtitle = task._subtitle;
       if (subtitle != null &&

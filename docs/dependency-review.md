@@ -56,6 +56,10 @@ The five BSD-2-Clause files belong to `sqflite` 2.4.4, `sqflite_android` 2.4.4, 
 
 This establishes notice-file presence and recognizable license text, not a complete per-file, nested/vendored-code, patent, compatibility, or shipped-artifact audit. The five SDK entries, native libraries, fonts, artwork, and container contents are outside this hosted-package check. Not all 95 packages ship in the Android app.
 
+## Linux additions
+
+Linux support adds `video_player_media_kit` 2.0.0 and `media_kit_libs_linux` 1.2.1, plus their resolved transitive dependencies. The historical counts above predate this addition. Linux playback also dynamically uses the system libmpv and its codec libraries; the Linux plugin builds mimalloc. Inventory their actual licenses and applicable source/redistribution obligations before distributing Linux binaries. The Dart package notices alone do not cover all native-library obligations, and this addition is not a completed compatibility audit.
+
 ## Still required before distribution
 
 - Inventory the actual release build's Flutter SDK, transitive Dart packages, native Android artifacts, fonts, and artwork; inspect their licenses and preserve required notices.

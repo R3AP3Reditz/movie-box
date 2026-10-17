@@ -419,6 +419,20 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
     await tester.pumpWidget(MovieBoxApp(library: library));
+    final transitions = tester
+        .widget<MaterialApp>(find.byType(MaterialApp))
+        .theme!
+        .pageTransitionsTheme
+        .builders;
+    expect(
+      (transitions[TargetPlatform.linux] as ZoomPageTransitionsBuilder)
+          .allowSnapshotting,
+      isFalse,
+    );
+    expect(
+      transitions[TargetPlatform.android].runtimeType,
+      const PageTransitionsTheme().builders[TargetPlatform.android].runtimeType,
+    );
     expect(find.byType(NavigationRail), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
     for (final pair in [

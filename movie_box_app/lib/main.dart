@@ -1,14 +1,20 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player_media_kit/video_player_media_kit.dart';
 
 import 'api.dart';
+import 'desktop.dart';
 import 'library.dart';
 import 'screens.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (isDesktopWindow) {
+    VideoPlayerMediaKit.ensureInitialized(linux: true, windows: true);
+  }
   final library = MovieLibrary(await SharedPreferences.getInstance());
   runApp(MovieBoxApp(library: library));
   unawaited(library.backfillThumbnails());
@@ -74,6 +80,11 @@ class _MovieBoxAppState extends State<MovieBoxApp> with WidgetsBindingObserver {
     );
   }
 
+  void selectTab(int index) {
+    if (tab == index) return;
+    setState(() => tab = index);
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -90,10 +101,23 @@ class _MovieBoxAppState extends State<MovieBoxApp> with WidgetsBindingObserver {
       scaffoldMessengerKey: messengerKey,
       title: 'MovieBox',
       debugShowCheckedModeBanner: false,
+      scrollBehavior: const DesktopScrollBehavior(),
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
         scaffoldBackgroundColor: background,
+        pageTransitionsTheme: PageTransitionsTheme(
+          builders: {
+            ...const PageTransitionsTheme().builders,
+            // Desktop video textures cannot be snapshotted during navigation.
+            TargetPlatform.linux: const ZoomPageTransitionsBuilder(
+              allowSnapshotting: false,
+            ),
+            TargetPlatform.windows: const ZoomPageTransitionsBuilder(
+              allowSnapshotting: false,
+            ),
+          },
+        ),
         colorScheme: const ColorScheme.dark(
           primary: accent,
           secondary: accent,
@@ -105,6 +129,9 @@ class _MovieBoxAppState extends State<MovieBoxApp> with WidgetsBindingObserver {
           elevation: 0,
         ),
         cardTheme: const CardThemeData(color: surface),
+        snackBarTheme: const SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+        ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: surface,
@@ -116,7 +143,8 @@ class _MovieBoxAppState extends State<MovieBoxApp> with WidgetsBindingObserver {
       ),
       home: LayoutBuilder(
         builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 900;
+          final wide = constraints.maxWidth >= wideLayoutBreakpoint;
+          final extended = constraints.maxWidth >= 1200;
           final pages = IndexedStack(
             index: tab,
             children: [
@@ -150,86 +178,135 @@ class _MovieBoxAppState extends State<MovieBoxApp> with WidgetsBindingObserver {
               ),
             ],
           );
-          return Scaffold(
-            body: SafeArea(
-              child: wide
-                  ? Row(
-                      children: [
-                        NavigationRail(
-                          selectedIndex: tab,
-                          onDestinationSelected: (index) =>
-                              setState(() => tab = index),
-                          extended: constraints.maxWidth >= 1200,
-                          scrollable: true,
-                          labelType: constraints.maxWidth >= 1200
-                              ? NavigationRailLabelType.none
-                              : NavigationRailLabelType.all,
-                          destinations: const [
-                            NavigationRailDestination(
-                              icon: Icon(Icons.home_outlined),
-                              selectedIcon: Icon(Icons.home),
-                              label: Text('Home'),
+          return CallbackShortcuts(
+            bindings: {
+              for (final (index, key) in const [
+                LogicalKeyboardKey.digit1,
+                LogicalKeyboardKey.digit2,
+                LogicalKeyboardKey.digit3,
+                LogicalKeyboardKey.digit4,
+                LogicalKeyboardKey.digit5,
+              ].indexed) ...{
+                SingleActivator(key, control: true): () => selectTab(index),
+                SingleActivator(key, meta: true): () => selectTab(index),
+              },
+              const SingleActivator(
+                LogicalKeyboardKey.keyF,
+                control: true,
+              ): () =>
+                  selectTab(2),
+              const SingleActivator(LogicalKeyboardKey.keyF, meta: true): () =>
+                  selectTab(2),
+            },
+            child: Focus(
+              autofocus: true,
+              child: Scaffold(
+                body: SafeArea(
+                  child: wide
+                      ? Row(
+                          children: [
+                            NavigationRail(
+                              selectedIndex: tab,
+                              onDestinationSelected: selectTab,
+                              extended: extended,
+                              scrollable: true,
+                              leading: extended
+                                  ? const Padding(
+                                      padding: EdgeInsets.fromLTRB(
+                                        14,
+                                        18,
+                                        14,
+                                        22,
+                                      ),
+                                      child: Text(
+                                        'MovieBox',
+                                        style: TextStyle(
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFFF2B86B),
+                                        ),
+                                      ),
+                                    )
+                                  : const Padding(
+                                      padding: EdgeInsets.only(
+                                        top: 12,
+                                        bottom: 8,
+                                      ),
+                                      child: Icon(
+                                        Icons.movie_filter_outlined,
+                                        color: Color(0xFFF2B86B),
+                                      ),
+                                    ),
+                              labelType: extended
+                                  ? NavigationRailLabelType.none
+                                  : NavigationRailLabelType.all,
+                              destinations: const [
+                                NavigationRailDestination(
+                                  icon: Icon(Icons.home_outlined),
+                                  selectedIcon: Icon(Icons.home),
+                                  label: Text('Home'),
+                                ),
+                                NavigationRailDestination(
+                                  icon: Icon(Icons.bookmark_border),
+                                  selectedIcon: Icon(Icons.bookmark),
+                                  label: Text('Library'),
+                                ),
+                                NavigationRailDestination(
+                                  icon: Icon(Icons.search),
+                                  label: Text('Search'),
+                                ),
+                                NavigationRailDestination(
+                                  icon: Icon(Icons.download_outlined),
+                                  selectedIcon: Icon(Icons.download),
+                                  label: Text('Downloads'),
+                                ),
+                                NavigationRailDestination(
+                                  icon: Icon(Icons.settings_outlined),
+                                  selectedIcon: Icon(Icons.settings),
+                                  label: Text('Settings'),
+                                ),
+                              ],
                             ),
-                            NavigationRailDestination(
-                              icon: Icon(Icons.bookmark_border),
-                              selectedIcon: Icon(Icons.bookmark),
-                              label: Text('Library'),
-                            ),
-                            NavigationRailDestination(
-                              icon: Icon(Icons.search),
-                              label: Text('Search'),
-                            ),
-                            NavigationRailDestination(
-                              icon: Icon(Icons.download_outlined),
-                              selectedIcon: Icon(Icons.download),
-                              label: Text('Downloads'),
-                            ),
-                            NavigationRailDestination(
-                              icon: Icon(Icons.settings_outlined),
-                              selectedIcon: Icon(Icons.settings),
-                              label: Text('Settings'),
-                            ),
+                            const VerticalDivider(width: 1),
+                            Expanded(child: pages),
                           ],
-                        ),
-                        const VerticalDivider(width: 1),
-                        Expanded(child: pages),
-                      ],
-                    )
-                  : pages,
+                        )
+                      : pages,
+                ),
+                bottomNavigationBar: wide
+                    ? null
+                    : NavigationBar(
+                        selectedIndex: tab,
+                        onDestinationSelected: selectTab,
+                        destinations: const [
+                          NavigationDestination(
+                            icon: Icon(Icons.home_outlined),
+                            selectedIcon: Icon(Icons.home),
+                            label: 'Home',
+                          ),
+                          NavigationDestination(
+                            icon: Icon(Icons.bookmark_border),
+                            selectedIcon: Icon(Icons.bookmark),
+                            label: 'Library',
+                          ),
+                          NavigationDestination(
+                            icon: Icon(Icons.search),
+                            label: 'Search',
+                          ),
+                          NavigationDestination(
+                            icon: Icon(Icons.download_outlined),
+                            selectedIcon: Icon(Icons.download),
+                            label: 'Downloads',
+                          ),
+                          NavigationDestination(
+                            icon: Icon(Icons.settings_outlined),
+                            selectedIcon: Icon(Icons.settings),
+                            label: 'Settings',
+                          ),
+                        ],
+                      ),
+              ),
             ),
-            bottomNavigationBar: wide
-                ? null
-                : NavigationBar(
-                    selectedIndex: tab,
-                    onDestinationSelected: (index) =>
-                        setState(() => tab = index),
-                    destinations: const [
-                      NavigationDestination(
-                        icon: Icon(Icons.home_outlined),
-                        selectedIcon: Icon(Icons.home),
-                        label: 'Home',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.bookmark_border),
-                        selectedIcon: Icon(Icons.bookmark),
-                        label: 'Library',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.search),
-                        label: 'Search',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.download_outlined),
-                        selectedIcon: Icon(Icons.download),
-                        label: 'Downloads',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.settings_outlined),
-                        selectedIcon: Icon(Icons.settings),
-                        label: 'Settings',
-                      ),
-                    ],
-                  ),
           );
         },
       ),
