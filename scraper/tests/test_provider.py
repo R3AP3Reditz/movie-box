@@ -44,8 +44,16 @@ def test_home_and_paginated_browse():
     service = source({
         ("GET", "/wefeed-h5api-bff/home"): {"operatingList": [
             {"type": "BANNER", "banner": {"items": [{"subject": SUBJECT}]}},
+            {"type": "SUBJECTS_MOVIE", "title": "Western TV", "subjects": [SUBJECT]},
+            {"type": "SUBJECTS_MOVIE", "title": "Trending Now", "subjects": [SERIES]},
+            {"type": "SUBJECTS_MOVIE", "title": "Free Now!", "subjects": [SUBJECT]},
+            {"type": "SUBJECTS_MOVIE", "title": "Cinema", "subjects": [SUBJECT]},
             {"type": "SUBJECTS_MOVIE", "title": "Movies", "subjects": [SUBJECT, SERIES]},
         ]},
+        ("POST", "/wefeed-h5api-bff/subject/filter"): lambda request: {
+            "items": [SERIES] if json.loads(request.content)["channelId"] == 2 else [SUBJECT],
+            "pager": {"hasMore": False},
+        },
         ("GET", "/wefeed-h5api-bff/tab-operating"): {"operatingList": [{"type": "SUBJECTS_MOVIE", "title": "Movie picks", "subjects": [SUBJECT]}]},
         ("GET", "/wefeed-h5api-bff/subject/everyone-search"): {"everyoneSearch": [{"title": "Example Movie"}]},
         ("POST", "/wefeed-h5api-bff/subject/search-suggest"): {"items": [{"word": "Example Movie"}]},
@@ -53,8 +61,11 @@ def test_home_and_paginated_browse():
             "subjectList": [SUBJECT, SERIES], "pager": {"hasMore": True, "nextPage": "2"}
         },
     })
-    assert service.home().banners[0].poster_url.endswith("poster.jpg")
-    assert [x.kind for x in service.home().sections[0].items] == ["movie", "series"]
+    home = service.home()
+    assert home.banners[0].poster_url.endswith("poster.jpg")
+    assert [section.title for section in home.sections] == ["Series", "Movies", "Trending", "Cinema", "Western TV"]
+    assert home.sections[0].items[0].kind == "series"
+    assert home.sections[1].items[0].kind == "movie"
     assert service.collection("movies").sections[0].items[0].id == "123"
     with pytest.raises(ProviderError):
         service.collection("unknown")

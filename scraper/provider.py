@@ -68,6 +68,20 @@ def _title(raw: dict) -> Title:
     )
 
 
+# Regional and language rows from the India site. They stay after the
+# general series, movies, and trending rows.
+_LATE_HOME = (
+    "western", "bollywood", "south indian", "indian", "hollywood",
+    "anime", "asian", "dussehra", "nollywood", "korean", "k-drama",
+    "telugu", "tamil", "hindi",
+)
+
+
+def _late_home_section(title: str) -> bool:
+    folded = title.casefold()
+    return any(word in folded for word in _LATE_HOME)
+
+
 def _sections(data: dict) -> Home:
     banners = []
     sections = []
@@ -225,7 +239,9 @@ class MovieBoxProvider:
                 if number > 0 and count > 0:
                     resolutions = sorted({int(item["resolution"]) for item in season.get("resolutions") or [] if item.get("resolution")})
                     seasons.append(Season(number=number, episode_count=count, resolutions=resolutions))
-        return Detail(title=_title(subject), cast=[], seasons=seasons, dubs=[], trailer_url=None)
+        people = subject.get("stars") or subject.get("staffList") or subject.get("actors") or []
+        cast = [{"name": person.get("name"), "character": person.get("character"), "image_url": person.get("avatarUrl")} for person in people if isinstance(person, dict) and person.get("name")]
+        return Detail(title=_title(subject), cast=cast, seasons=seasons, dubs=[], trailer_url=None)
 
     def close(self):
         self.client.close()
@@ -271,7 +287,32 @@ class MovieBoxProvider:
         return value
 
     def home(self) -> Home:
-        return self._cached("home", lambda: _sections(self._data("/home", params={"host": "themoviebox.xyz"})))
+        def load() -> Home:
+            upstream = _sections(self._data("/home", params={"host": "themoviebox.xyz"}))
+            series = self.catalog("series", 1).items
+            movies = self.catalog("movies", 1).items
+            trending = next((section.items for section in upstream.sections if "trend" in section.title.casefold()), None)
+            if not trending:
+                trending = self.browse(1).items
+            early = []
+            late = []
+            for section in upstream.sections:
+                folded = section.title.casefold().strip()
+                if "trend" in folded or "free" in folded or folded in {"movies", "movie", "series", "tv series"}:
+                    continue
+                (late if _late_home_section(section.title) else early).append(section)
+            sections = []
+            if series:
+                sections.append(Section(title="Series", kind="catalog", items=series))
+            if movies:
+                sections.append(Section(title="Movies", kind="catalog", items=movies))
+            if trending:
+                sections.append(Section(title="Trending", kind="catalog", items=trending))
+            sections.extend(early)
+            sections.extend(late)
+            return Home(banners=upstream.banners, sections=sections)
+
+        return self._cached("home", load)
 
     def collection(self, name: str) -> Home:
         tabs = {"movies": 2, "midnight": 9}
