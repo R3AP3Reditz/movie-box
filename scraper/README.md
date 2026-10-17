@@ -16,7 +16,7 @@ By default the port is bound to localhost only. For an Android device on the sam
 
 ## API
 
-- `GET /v1/home`: banner titles and editorial sections (including animation and other public sections when present).
+- `GET /v1/home`: banner titles and editorial sections. The site's own Hollywood row leads, followed by its Western TV row and the trending row; regional and language rows follow, and the built-in movie and series catalog rows come last because the app mainly covers titles from outside India.
 - `GET /v1/collections/movies` and `GET /v1/collections/midnight`: editorial sections for those site tabs. Home also includes anime and TV sections.
 - `GET /v1/browse?page=1&kind=movie`: paginated trending titles. `kind=movie` selects the movie tab automatically; `tab=home|movies|midnight` can select a tab explicitly. `kind` may be `movie`, `series`, `short_series`, or `other`. Kind filtering within a tab can still leave some pages sparse.
 - `GET /v1/catalog/movies`, `/v1/catalog/series`, or `/v1/catalog/animation`: paginated full catalog with optional `page`, `genre`, `country`, `year`, `language`, and `sort` query parameters. `GET /v1/catalog/series/filters` and `/v1/catalog/animation/filters` expose the site's current filter choices. Movie filter choices are not published in the available page data; the same query parameters still work for movies.
