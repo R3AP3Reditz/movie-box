@@ -31,6 +31,18 @@ tasks.configureEach {
     if (name == "preReleaseBuild") {
         dependsOn(verifyReleaseSigning)
     }
+    if (name == "compileReleaseJavaWithJavac") {
+        doFirst {
+            val registrant = file("src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java")
+            if (!registrant.isFile) return@doFirst
+            val pattern = Regex(
+                """(?s)\n\s*try \{\s*flutterEngine\.getPlugins\(\)\.add\(new dev\.flutter\.plugins\.integration_test\.IntegrationTestPlugin\(\)\);\s*\} catch \(Exception e\) \{\s*Log\.e\(TAG, "Error registering plugin integration_test[^"]*", e\);\s*\}""",
+            )
+            val source = registrant.readText()
+            val updated = pattern.replace(source, "")
+            if (updated != source) registrant.writeText(updated)
+        }
+    }
 }
 
 android {
