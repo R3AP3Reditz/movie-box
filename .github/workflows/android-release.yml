@@ -86,7 +86,7 @@ jobs:
           umask 077
           printf '%s' "$MOVIE_BOX_KEYSTORE_BASE64" | base64 --decode > "$MOVIE_BOX_KEYSTORE_PATH"
           unset MOVIE_BOX_KEYSTORE_BASE64
-          flutter build apk --release --no-pub --build-name "$VERSION" --build-number "$BUILD_NUMBER"
+          flutter build apk --release --build-name "$VERSION" --build-number "$BUILD_NUMBER"
           apk=build/app/outputs/flutter-apk/app-release.apk
           tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
           "$tools/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/apk-signature.txt"

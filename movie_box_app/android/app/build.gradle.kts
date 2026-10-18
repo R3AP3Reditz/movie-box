@@ -27,21 +27,38 @@ val verifyReleaseSigning = tasks.register("verifyReleaseSigning") {
     }
 }
 
+val stripIntegrationTestRegistrant = tasks.register("stripIntegrationTestRegistrant") {
+    doLast {
+        val registrant = file("src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java")
+        if (!registrant.isFile) return@doLast
+        val lines = registrant.readLines()
+        val kept = mutableListOf<String>()
+        var index = 0
+        while (index < lines.size) {
+            val block = lines.subList(index, minOf(index + 6, lines.size)).joinToString("\n")
+            if (lines[index].trim() == "try {" && block.contains("integration_test.IntegrationTestPlugin")) {
+                index += 1
+                while (index < lines.size && lines[index].trim() != "}") index += 1
+                if (index < lines.size) index += 1
+                continue
+            }
+            kept.add(lines[index])
+            index += 1
+        }
+        val updated = kept.joinToString("\n") + "\n"
+        if (updated != registrant.readText()) registrant.writeText(updated)
+    }
+}
+
 tasks.configureEach {
     if (name == "preReleaseBuild") {
         dependsOn(verifyReleaseSigning)
     }
+    if (name == "compileFlutterBuildRelease") {
+        stripIntegrationTestRegistrant.configure { mustRunAfter(this@configureEach) }
+    }
     if (name == "compileReleaseJavaWithJavac") {
-        doFirst {
-            val registrant = file("src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java")
-            if (!registrant.isFile) return@doFirst
-            val pattern = Regex(
-                """(?s)\n\s*try \{\s*flutterEngine\.getPlugins\(\)\.add\(new dev\.flutter\.plugins\.integration_test\.IntegrationTestPlugin\(\)\);\s*\} catch \(Exception e\) \{\s*Log\.e\(TAG, "Error registering plugin integration_test[^"]*", e\);\s*\}""",
-            )
-            val source = registrant.readText()
-            val updated = pattern.replace(source, "")
-            if (updated != source) registrant.writeText(updated)
-        }
+        dependsOn(stripIntegrationTestRegistrant)
     }
 }
 
