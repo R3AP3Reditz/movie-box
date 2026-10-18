@@ -200,7 +200,7 @@ jobs:
           flutter pub get --enforce-lockfile
           flutter build macos --release --build-name "$VERSION" --build-number "${{ inputs.build_number }}"
           mkdir -p ../release
-          ditto -c -k --keepParent "build/macos/Build/Products/Release/Runner.app" "../release/MovieBox-$VERSION-macos.zip"
+          ditto -c -k --keepParent "build/macos/Build/Products/Release/movie_box_app.app" "../release/MovieBox-$VERSION-macos.zip"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: macos-release

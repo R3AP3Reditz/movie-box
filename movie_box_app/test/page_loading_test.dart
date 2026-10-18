@@ -440,10 +440,11 @@ void main() {
     expect(find.byType(MovieBoxLoader), findsNothing);
     Navigator.of(tester.element(find.text('Download quality'))).pop();
     await tester.pumpAndSettle();
-    expect(
-      tester.widget<OutlinedButton>(find.byType(OutlinedButton)).onPressed,
-      isNotNull,
+    final download = find.ancestor(
+      of: find.text('Download MP4'),
+      matching: find.byType(OutlinedButton),
     );
+    expect(tester.widget<OutlinedButton>(download).onPressed, isNotNull);
 
     await tester.tap(find.text('Download MP4'));
     await _flush(tester);
