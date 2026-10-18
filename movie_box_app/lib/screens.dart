@@ -1929,7 +1929,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
             title: Text(entry.title.title),
             subtitle: Text(
-              '${entry.resolution}p${entry.season > 0 ? ' · S${entry.season} E${entry.episode}' : ''} · ${entry.subtitlePath != null && File(entry.subtitlePath!).existsSync() ? 'Subtitles saved' : 'No subtitles'}',
+              '${entry.resolution}p${entry.season > 0 ? ' · S${entry.season} E${entry.episode}' : ''} · ${entry.subtitlePath != null && File(entry.subtitlePath!).existsSync() ? 'Subtitles saved' : 'No subtitles'}${entry.sharedPath != null ? ' · In Downloads' : ''}',
             ),
             onTap: () => openPage(
               context,

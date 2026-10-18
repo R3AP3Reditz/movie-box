@@ -197,6 +197,10 @@ class SavedDownload {
   final int season, episode;
   final String resolution, path;
   final String? subtitlePath, thumbnailPath;
+
+  /// Copy in the phone's public Downloads folder, when one was made.
+  /// Android content URIs are stored as-is; other platforms never set this.
+  final String? sharedPath, sharedSubtitlePath;
   SavedDownload(
     this.title,
     this.season,
@@ -205,6 +209,8 @@ class SavedDownload {
     this.path,
     this.subtitlePath, {
     this.thumbnailPath,
+    this.sharedPath,
+    this.sharedSubtitlePath,
   });
   String get key => viewingKey(title.path, season, episode);
   Map<String, dynamic> toJson() => {
@@ -215,6 +221,8 @@ class SavedDownload {
     'path': path,
     'subtitle_path': subtitlePath,
     'thumbnail_path': thumbnailPath,
+    'shared_path': sharedPath,
+    'shared_subtitle_path': sharedSubtitlePath,
   };
   SavedDownload.fromJson(Map<String, dynamic> data)
     : title = MovieTitle.fromJson(data['title'] as Map<String, dynamic>),
@@ -223,5 +231,7 @@ class SavedDownload {
       resolution = data['resolution'] as String,
       path = data['path'] as String,
       subtitlePath = data['subtitle_path'] as String?,
-      thumbnailPath = data['thumbnail_path'] as String?;
+      thumbnailPath = data['thumbnail_path'] as String?,
+      sharedPath = data['shared_path'] as String?,
+      sharedSubtitlePath = data['shared_subtitle_path'] as String?;
 }

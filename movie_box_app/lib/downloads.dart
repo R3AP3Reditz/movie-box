@@ -712,6 +712,8 @@ class _DownloadCoordinator {
   }
 
   Future<void> _finalize(DownloadTask task) async {
+    // Re-finalizing a restored download must not copy it into Downloads again.
+    final firstCompletion = !task.complete;
     final video = task._video!;
     final id = video.taskId;
     final file = File(DownloadTask._path(video)!);
@@ -750,6 +752,10 @@ class _DownloadCoordinator {
       thumbnailPath: previous?.path == file.path
           ? previous?.thumbnailPath
           : null,
+      sharedPath: previous?.path == file.path ? previous?.sharedPath : null,
+      sharedSubtitlePath: previous?.path == file.path
+          ? previous?.sharedSubtitlePath
+          : null,
     );
     // No awaits between the generation check and insertion.
     library.downloads[task.key] = saved;
@@ -775,6 +781,8 @@ class _DownloadCoordinator {
               file.path,
               current!.subtitlePath,
               thumbnailPath: thumbnail,
+              sharedPath: current.sharedPath,
+              sharedSubtitlePath: current.sharedSubtitlePath,
             ),
           );
         } else {
@@ -782,6 +790,51 @@ class _DownloadCoordinator {
         }
       }
     }
+    if (firstCompletion && saved.sharedPath == null && _current(task, id)) {
+      unawaited(_share(task, file).catchError((Object _) {}));
+    }
+  }
+
+  /// Copies a finished download into the phone's public Downloads folder.
+  /// The app keeps its own copy, so playback and captions are unaffected.
+  Future<void> _share(DownloadTask task, File file) async {
+    final current = library.downloads[task.key];
+    if (current == null || current.path != file.path || current.sharedPath != null) {
+      return;
+    }
+    final captionPath = current.subtitlePath;
+    final hasCaption =
+        captionPath != null && await File(captionPath).exists();
+    final shared = await exportToDownloads(
+      path: file.path,
+      relativePath: sharedRelativePath(task.title, task.season, task.episode),
+      fileName: sharedFileName(task.title, task.season, task.episode),
+      subtitlePath: hasCaption ? captionPath : null,
+      subtitleFileName: hasCaption
+          ? sharedSubtitleFileName(task.title, task.season, task.episode)
+          : null,
+    );
+    if (shared == null) return;
+    final latest = library.downloads[task.key];
+    if (latest == null || latest.path != file.path) {
+      // A newer generation replaced this download while the copy was running.
+      await deleteSharedFile(shared['video']);
+      await deleteSharedFile(shared['subtitle']);
+      return;
+    }
+    await library.addDownload(
+      SavedDownload(
+        latest.title,
+        latest.season,
+        latest.episode,
+        latest.resolution,
+        latest.path,
+        latest.subtitlePath,
+        thumbnailPath: latest.thumbnailPath,
+        sharedPath: shared['video'],
+        sharedSubtitlePath: shared['subtitle'],
+      ),
+    );
   }
 
   Future<void> _discardSavedFile(DownloadTask task, String path) async {

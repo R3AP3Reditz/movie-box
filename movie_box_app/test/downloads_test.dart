@@ -346,6 +346,72 @@ void main() {
     });
   }
 
+  test('Android completion copies the episode into the shared Downloads folder', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final calls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(mediaChannel, (call) async {
+      calls.add(call);
+      if (call.method == 'exportToDownloads') {
+        return {
+          'video': 'content://media/external/downloads/7',
+          'subtitle': null,
+        };
+      }
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(mediaChannel, null));
+    final task = await start();
+    await complete(backend.enqueued.single);
+    await pumpEventQueue();
+    expect(task.complete, isTrue);
+    final exported = calls.firstWhere(
+      (call) => call.method == 'exportToDownloads',
+    );
+    final arguments = exported.arguments as Map;
+    expect(arguments['relativePath'], 'movie-box/A series/S01E02');
+    expect(arguments['fileName'], 'A series S01E02.mp4');
+    expect(
+      library.downloads.values.single.sharedPath,
+      'content://media/external/downloads/7',
+    );
+    expect(
+      MovieLibrary(prefs).downloads.values.single.sharedPath,
+      'content://media/external/downloads/7',
+    );
+  });
+
+  test('Restoring a finished download never copies it again', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    var exports = 0;
+    messenger.setMockMethodCallHandler(mediaChannel, (call) async {
+      if (call.method == 'exportToDownloads') {
+        exports++;
+        return {
+          'video': 'content://media/external/downloads/7',
+          'subtitle': null,
+        };
+      }
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(mediaChannel, null));
+    await start();
+    await complete(backend.enqueued.single);
+    await pumpEventQueue();
+    expect(exports, 1);
+    library.dispose();
+    library = createLibrary();
+    await library.initializeDownloads();
+    await pumpEventQueue();
+    expect(library.downloads.values.single.path, isNotEmpty);
+    expect(exports, 1);
+  });
+
   test('Pending caption files are not attached before completion', () async {
     final task = await start(subtitle: caption);
     final video = backend.enqueued.first;

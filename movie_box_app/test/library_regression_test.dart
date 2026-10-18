@@ -136,6 +136,65 @@ void main() {
     },
   );
 
+  test('Shared folder names follow movie-box/<name>/<episode>/', () {
+    expect(sharedRelativePath(title, 1, 2), 'movie-box/QA series/S01E02');
+    expect(sharedFileName(title, 1, 2), 'QA series S01E02.mp4');
+    expect(sharedSubtitleFileName(title, 1, 2), 'QA series S01E02.srt');
+    expect(sharedRelativePath(title, 0, 0), 'movie-box/QA series');
+    expect(sharedFileName(title, 0, 0), 'QA series.mp4');
+  });
+
+  test('Shared folder names drop characters Android cannot store', () {
+    final messy = MovieTitle.fromJson({
+      'id': 'qa',
+      'detail_path': 'messy',
+      'kind': 'series',
+      'title': 'Spaced: Out / Season 2\\ ',
+      'has_resource': true,
+    });
+    expect(sharedRelativePath(messy, 1, 3), 'movie-box/Spaced Out Season 2/S01E03');
+  });
+
+  test('Deleting a download removes its public Downloads copy', () async {
+    final video = await File('${directory.path}/video.mp4').writeAsBytes([1]);
+    final deleted = <String>[];
+    messenger.setMockMethodCallHandler(mediaChannel, (call) async {
+      if (call.method == 'deleteSharedFile') deleted.add('${call.arguments}');
+      return null;
+    });
+    final saved = SavedDownload(
+      title,
+      1,
+      2,
+      '360',
+      video.path,
+      null,
+      sharedPath: 'content://media/external/downloads/7',
+    );
+    await library.addDownload(saved);
+    await library.removeDownload(saved);
+    expect(deleted, ['content://media/external/downloads/7']);
+    expect(await video.exists(), isFalse);
+  });
+
+  test('Deleting a download removes its exported file path copy', () async {
+    final video = await File('${directory.path}/video.mp4').writeAsBytes([1]);
+    final exported = await File('${directory.path}/exported.mp4')
+        .writeAsBytes([2]);
+    final saved = SavedDownload(
+      title,
+      1,
+      2,
+      '360',
+      video.path,
+      null,
+      sharedPath: exported.path,
+    );
+    await library.addDownload(saved);
+    await library.removeDownload(saved);
+    expect(await exported.exists(), isFalse);
+  });
+
   test(
     'Backfill cannot resurrect a download deleted during extraction',
     () async {

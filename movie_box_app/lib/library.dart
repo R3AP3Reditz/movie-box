@@ -36,6 +36,82 @@ Future<String?> extractThumbnail(String path) async {
   }
 }
 
+/// Copies finished downloads into the phone's public Downloads folder.
+/// Returns the video and subtitle locations, or null when unavailable.
+Future<Map<String, String?>?> exportToDownloads({
+  required String path,
+  required String relativePath,
+  required String fileName,
+  String? subtitlePath,
+  String? subtitleFileName,
+}) async {
+  if (isDesktopWindow) return null;
+  try {
+    return await mediaChannel.invokeMapMethod<String, String?>(
+      'exportToDownloads',
+      {
+        'path': path,
+        'relativePath': relativePath,
+        'fileName': fileName,
+        'subtitlePath': ?subtitlePath,
+        'subtitleFileName': ?subtitleFileName,
+      },
+    );
+  } on PlatformException {
+    return null;
+  } on MissingPluginException {
+    return null;
+  }
+}
+
+/// Removes an exported copy; content URIs need the platform, plain paths do not.
+Future<void> deleteSharedFile(String? location) async {
+  if (location == null) return;
+  if (!location.startsWith('content://')) {
+    await _deleteFile(location);
+    return;
+  }
+  try {
+    await mediaChannel.invokeMethod<void>('deleteSharedFile', location);
+  } on PlatformException {
+    // The entry is already gone, or the platform refused; nothing to clean up.
+  } on MissingPluginException {
+    // No platform implementation (desktop or tests).
+  }
+}
+
+String _safeSegment(String value) {
+  final cleaned = value
+      .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  final trimmed = cleaned.replaceAll(RegExp(r'[. ]+$'), '');
+  if (trimmed.isEmpty) return 'MovieBox';
+  return trimmed.length > 80 ? trimmed.substring(0, 80).trim() : trimmed;
+}
+
+String sharedEpisodeFolder(int season, int episode) =>
+    'S${season.toString().padLeft(2, '0')}E${episode.toString().padLeft(2, '0')}';
+
+/// `movie-box/<name>/` for a film, `movie-box/<name>/<SxxExx>/` for an episode.
+String sharedRelativePath(MovieTitle title, int season, int episode) {
+  final name = _safeSegment(title.title);
+  if (season <= 0 || episode <= 0) return 'movie-box/$name';
+  return 'movie-box/$name/${sharedEpisodeFolder(season, episode)}';
+}
+
+String sharedFileName(MovieTitle title, int season, int episode) {
+  final name = _safeSegment(title.title);
+  if (season <= 0 || episode <= 0) return '$name.mp4';
+  return '$name ${sharedEpisodeFolder(season, episode)}.mp4';
+}
+
+String sharedSubtitleFileName(MovieTitle title, int season, int episode) {
+  final name = _safeSegment(title.title);
+  if (season <= 0 || episode <= 0) return '$name.srt';
+  return '$name ${sharedEpisodeFolder(season, episode)}.srt';
+}
+
 class MovieLibrary extends ChangeNotifier {
   final SharedPreferences prefs;
   final DownloadBackend? downloadBackend;
@@ -188,6 +264,8 @@ class MovieLibrary extends ChangeNotifier {
             current.path,
             current.subtitlePath,
             thumbnailPath: path,
+            sharedPath: current.sharedPath,
+            sharedSubtitlePath: current.sharedSubtitlePath,
           ),
         );
         if (current.thumbnailPath != null && current.thumbnailPath != path) {
@@ -212,6 +290,8 @@ class MovieLibrary extends ChangeNotifier {
     await _deleteFile(entry.path);
     await _deleteFile(entry.subtitlePath);
     await _deleteFile(entry.thumbnailPath);
+    await deleteSharedFile(entry.sharedPath);
+    await deleteSharedFile(entry.sharedSubtitlePath);
   }
 
   Future<void> _saveDownloads() async {
