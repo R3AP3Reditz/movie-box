@@ -363,7 +363,7 @@ class MovieBoxProvider:
         return Page(items=[_title(x) for x in data.get("items") or []], page=page, next_page=_number(pager.get("nextPage")) if pager.get("hasMore") else None, has_more=bool(pager.get("hasMore")))
 
     def catalog_filters(self, name: str) -> CatalogFilters:
-        paths = {"series": "/web/tv-series", "animation": "/web/animated-series"}
+        paths = {"movies": "/web/film", "series": "/web/tv-series", "animation": "/web/animated-series"}
         if name not in paths:
             raise ProviderError("Filter choices are unavailable for this catalog", 404)
 

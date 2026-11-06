@@ -531,7 +531,8 @@ class _PopularCarouselState extends State<PopularCarousel> {
                         padding: const EdgeInsets.symmetric(horizontal: 26),
                         child: _CarouselArrow(
                           icon: icon,
-                          onPressed: () => step(icon == Icons.chevron_left ? -1 : 1),
+                          onPressed: () =>
+                              step(icon == Icons.chevron_left ? -1 : 1),
                         ),
                       ),
                     ),
@@ -765,6 +766,8 @@ class CatalogScreen extends StatefulWidget {
 
 class _CatalogScreenState extends State<CatalogScreen> {
   final items = <MovieTitle>[];
+  final selectedFilters = <String, String>{};
+  MovieCatalogFilters? filters;
   int? next = 1;
   bool loading = false;
   Object? error;
@@ -772,6 +775,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   @override
   void initState() {
     super.initState();
+    loadFilters();
     load();
   }
 
@@ -779,7 +783,19 @@ class _CatalogScreenState extends State<CatalogScreen> {
   void didUpdateWidget(covariant CatalogScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.api != widget.api || oldWidget.name != widget.name) {
+      selectedFilters.clear();
+      filters = null;
       reload();
+      loadFilters();
+    }
+  }
+
+  Future<void> loadFilters() async {
+    try {
+      final result = await widget.api.catalogFilters(widget.name);
+      if (mounted) setState(() => filters = result);
+    } catch (_) {
+      // Filters are optional; the unfiltered catalog remains usable.
     }
   }
 
@@ -802,7 +818,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
       error = null;
     });
     try {
-      final result = await widget.api.catalog(widget.name, page);
+      final result = await widget.api.catalog(
+        widget.name,
+        page,
+        filters: {
+          for (final entry in selectedFilters.entries)
+            (entry.key == 'classify' ? 'language' : entry.key): entry.value,
+        },
+      );
       if (!mounted || serial != generation) return;
       setState(() {
         items.addAll(result.items);
@@ -815,6 +838,26 @@ class _CatalogScreenState extends State<CatalogScreen> {
     }
   }
 
+  String selectedFilterValue(MovieFilterGroup group) =>
+      selectedFilters[group.key] ??
+      group.values
+          .where((value) => value.id == 'All')
+          .map((value) => value.id)
+          .firstOrNull ??
+      (group.values.isEmpty ? '' : group.values.first.id);
+
+  Future<void> applyFilter(MovieFilterGroup group, String? selected) async {
+    if (selected == null) return;
+    setState(() {
+      if (selected.isEmpty || selected == 'All') {
+        selectedFilters.remove(group.key);
+      } else {
+        selectedFilters[group.key] = selected;
+      }
+    });
+    await reload();
+  }
+
   @override
   Widget build(BuildContext context) => RefreshIndicator(
     onRefresh: reload,
@@ -824,6 +867,34 @@ class _CatalogScreenState extends State<CatalogScreen> {
         SliverToBoxAdapter(
           child: ScreenHeader(widget.label, onRefresh: reload),
         ),
+        if (filters != null)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final group in filters!.groups.where(
+                    (group) => group.values.isNotEmpty,
+                  ))
+                    DropdownMenu<String>(
+                      label: Text(group.label),
+                      initialSelection: selectedFilterValue(group),
+                      onSelected: (value) => applyFilter(group, value),
+                      dropdownMenuEntries: group.values
+                          .map(
+                            (value) => DropdownMenuEntry<String>(
+                              value: value.id,
+                              label: value.label,
+                            ),
+                          )
+                          .toList(),
+                    ),
+                ],
+              ),
+            ),
+          ),
         if (items.isNotEmpty)
           TitleGrid(
             items: items,

@@ -39,6 +39,42 @@ class MovieTitle {
   };
 }
 
+class MovieFilterValue {
+  final String id, label;
+  const MovieFilterValue({required this.id, required this.label});
+  MovieFilterValue.fromJson(Map<String, dynamic> value)
+    : id = '${value['id'] ?? ''}',
+      label = '${value['label'] ?? ''}';
+}
+
+class MovieFilterGroup {
+  final String key, label;
+  final List<MovieFilterValue> values;
+  const MovieFilterGroup({
+    required this.key,
+    required this.label,
+    required this.values,
+  });
+  MovieFilterGroup.fromJson(Map<String, dynamic> value)
+    : key = '${value['key'] ?? ''}',
+      label = '${value['label'] ?? ''}',
+      values = (value['values'] as List? ?? [])
+          .map(
+            (item) => MovieFilterValue.fromJson(item as Map<String, dynamic>),
+          )
+          .toList();
+}
+
+class MovieCatalogFilters {
+  final List<MovieFilterGroup> groups;
+  MovieCatalogFilters.fromJson(Map<String, dynamic> value)
+    : groups = (value['groups'] as List? ?? [])
+          .map(
+            (item) => MovieFilterGroup.fromJson(item as Map<String, dynamic>),
+          )
+          .toList();
+}
+
 class MoviePage {
   final List<MovieTitle> items;
   final int? next;

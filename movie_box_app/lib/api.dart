@@ -54,8 +54,15 @@ class MovieApi {
   Future<MovieHome> home() async => MovieHome.fromJson(await get('/v1/home'));
   Future<MovieHome> collection(String name) async =>
       MovieHome.fromJson(await get('/v1/collections/$name'));
-  Future<MoviePage> catalog(String name, int page) async =>
-      MoviePage.fromJson(await get('/v1/catalog/$name', {'page': '$page'}));
+  Future<MovieCatalogFilters> catalogFilters(String name) async =>
+      MovieCatalogFilters.fromJson(await get('/v1/catalog/$name/filters'));
+  Future<MoviePage> catalog(
+    String name,
+    int page, {
+    Map<String, String> filters = const {},
+  }) async => MoviePage.fromJson(
+    await get('/v1/catalog/$name', {'page': '$page', ...filters}),
+  );
   Future<MoviePage> search(String query, int page) async => MoviePage.fromJson(
     await get('/v1/search', {'q': query, 'page': '$page'}),
   );

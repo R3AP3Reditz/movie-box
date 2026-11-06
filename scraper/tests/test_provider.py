@@ -283,6 +283,26 @@ def test_search_fallback_when_anonymous_session_is_unavailable():
         service.search("Example", 2)
 
 
+def test_catalog_filters_include_movie_options_and_api_route():
+    values = [None, {"filterItemsData": 2}, {"typeList": 3}, [4], {"items": 5}, [6], {"filterType": 7, "title": 8, "filterVals": 9}, "genre", "Genre", [10], {"id": 11, "name": 12}, "Action", "Action"]
+    html = f'<script id="__NUXT_DATA__">{json.dumps(values)}</script>'
+
+    service = MovieBoxProvider(httpx.Client(base_url="https://themoviebox.xyz", transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, text=html) if request.url.path == "/web/film" else httpx.Response(404)
+    )))
+    filters = service.catalog_filters("movies")
+    assert filters.groups[0].key == "genre"
+    assert [(value.id, value.label) for value in filters.groups[0].values] == [("Action", "Action")]
+    with TestClient(app) as client:
+        app.dependency_overrides[provider] = lambda: service
+        try:
+            response = client.get("/v1/catalog/movies/filters")
+            assert response.status_code == 200
+            assert response.json()["groups"][0]["values"][0] == {"id": "Action", "label": "Action"}
+        finally:
+            app.dependency_overrides.clear()
+
+
 def test_catalog_and_rankings():
     ranking_values = [None, {"rankingList": 2, "currentId": 4}, [3], {"id": 4, "name": 5}, "rank-1", "Top Movies"]
     ranking_html = f'<script id="__NUXT_DATA__" type="application/json">{json.dumps(ranking_values)}</script>'

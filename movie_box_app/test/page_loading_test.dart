@@ -17,12 +17,37 @@ import 'downloads_test.dart' show FakeDownloadBackend;
 
 class _Responses {
   final requests = <http.Request>[];
+  final filterRequests = <http.Request>[];
+  int filterStatus = 200;
   final pending = <Completer<http.Response>>[];
   late final client = MockClient((request) {
-    if (request.url.path.endsWith('/popular')) {
-      return Future.value(http.Response('[]', 200));
+    if (request.url.path.endsWith('/filters')) {
+      filterRequests.add(request);
+      if (filterStatus != 200) {
+        return Future.value(
+          http.Response('{"detail":"Filter error"}', filterStatus),
+        );
+      }
+      return Future.value(
+        http.Response(
+          jsonEncode({
+            'groups': [
+              {
+                'key': 'genre',
+                'label': 'Genre',
+                'values': [
+                  {'id': 'All', 'label': 'All'},
+                  {'id': 'Action', 'label': 'Action'},
+                ],
+              },
+            ],
+          }),
+          200,
+        ),
+      );
     }
-    if (request.url.path.endsWith('/recommendations')) {
+    if (request.url.path.endsWith('/popular') ||
+        request.url.path.endsWith('/recommendations')) {
       return Future.value(http.Response('{"items":[]}', 200));
     }
     requests.add(request);
@@ -209,6 +234,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Server unavailable'), findsOneWidget);
       expect(find.byType(MovieBoxLoader), findsNothing);
+      await tester.ensureVisible(find.text('Try again'));
       await tester.tap(find.text('Try again'));
       await _flush(tester);
       _expectLoader(tester, initialLabel);
@@ -225,8 +251,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('First title'), findsOneWidget);
       expect(find.text('Server unavailable'), findsOneWidget);
-      expect(find.byType(MovieBoxLoader), findsNothing);
       await tester.ensureVisible(find.text('Try again'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Try again'));
       await _flush(tester);
       _expectLoader(tester, 'Loading more titles', compact: true);
@@ -280,6 +306,75 @@ void main() {
     );
   }
 
+  testWidgets(
+    'Catalog exposes live filter options and sends selected filters',
+    (tester) async {
+      await tester.pumpWidget(
+        _screen(
+          CatalogScreen(
+            api: responses.api,
+            library: library,
+            name: 'movies',
+            label: 'Movies',
+          ),
+        ),
+      );
+      await _flush(tester);
+      expect(
+        responses.filterRequests.single.url.path,
+        '/v1/catalog/movies/filters',
+      );
+      expect(responses.requests.single.url.path, '/v1/catalog/movies');
+      responses.complete(0, _page('First title', next: 2));
+      await tester.pumpAndSettle();
+      expect(find.byType(DropdownMenu<String>), findsWidgets);
+      expect(find.text('All'), findsWidgets);
+      await tester.tap(find.byType(DropdownMenu<String>).first);
+      await tester.pumpAndSettle();
+      expect(find.text('Action').last, findsOneWidget);
+      await tester.tap(find.text('Action').last);
+      await tester.pump();
+      await _flush(tester);
+      expect(find.text('First title'), findsNothing);
+      expect(responses.requests, hasLength(2));
+      expect(responses.requests.last.url.queryParameters, {
+        'page': '1',
+        'genre': 'Action',
+      });
+      responses.complete(1, _page('Action title', next: 2));
+      await tester.pumpAndSettle();
+      expect(find.text('Action title'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('Catalog filter endpoint failure leaves catalog usable', (
+    tester,
+  ) async {
+    responses.filterStatus = 503;
+    await tester.pumpWidget(
+      _screen(
+        CatalogScreen(
+          api: responses.api,
+          library: library,
+          name: 'movies',
+          label: 'Movies',
+        ),
+      ),
+    );
+    await _flush(tester);
+    expect(
+      responses.filterRequests.single.url.path,
+      '/v1/catalog/movies/filters',
+    );
+    expect(responses.requests.single.url.path, '/v1/catalog/movies');
+    responses.complete(0, _page('Catalog still works'));
+    await tester.pumpAndSettle();
+    expect(find.text('Catalog still works'), findsOneWidget);
+    expect(find.text('Genre'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Catalog refresh supersedes pending pagination and can recover', (
     tester,
   ) async {
@@ -293,8 +388,8 @@ void main() {
         ),
       ),
     );
-    responses.complete(0, _page('First title', next: 2));
-    await tester.pumpAndSettle();
+    responses.complete(0, _page('Refresh setup', next: 2));
+    await _flush(tester);
     await tester.tap(find.text('Load more'));
     await _flush(tester);
     final refresh = tester.widget<RefreshIndicator>(
@@ -324,6 +419,7 @@ void main() {
     tester,
   ) async {
     final replacement = _Responses();
+    replacement.filterStatus = 503;
     addTearDown(replacement.api.close);
     Widget catalog(MovieApi api) => _screen(
       CatalogScreen(
