@@ -120,7 +120,7 @@ class MovieLibrary extends ChangeNotifier {
   bool _disposed = false;
   late final _DownloadCoordinator _coordinator = _DownloadCoordinator(this);
   late String server =
-      prefs.getString('server') ?? 'https://movie-box.n92dev.us.kg';
+      prefs.getString('server') ?? 'https://movie.mizuki.to';
   late String token = prefs.getString('token') ?? '';
   late final Map<String, WatchEntry> history = {
     for (final item in jsonDecode(prefs.getString('history') ?? '[]') as List)

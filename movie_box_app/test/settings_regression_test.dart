@@ -142,6 +142,7 @@ void main() {
   testWidgets('blank address uses default server without revealing it', (
     tester,
   ) async {
+    expect(library.server, 'https://movie.mizuki.to');
     final defaultServer = library.server;
     await http.runWithClient(() async {
       await mount(tester);
